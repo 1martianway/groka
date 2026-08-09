@@ -52,6 +52,9 @@ pub struct ModelState {
     pub available: IndexMap<acp::ModelId, acp::ModelInfo>,
     pub current: Option<acp::ModelId>,
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// True after `/effort auto` (router re-enabled). Cleared by an explicit
+    /// effort pin (`/effort <level>`, CLI). Status shows `medium (auto)`.
+    pub effort_auto: bool,
     /// External override for the context window size (tokens).
     /// When set, `get_context_window()` returns this instead of
     /// reading from the current model's metadata. Used for subagent
@@ -170,11 +173,27 @@ impl ModelState {
         effort_override: Option<ReasoningEffort>,
     ) {
         self.current = Some(model_id.clone());
+        // Explicit effort pin (or model change that re-derives effort) leaves
+        // auto mode; `/effort auto` sets `effort_auto` without going through here.
+        if effort_override.is_some() {
+            self.effort_auto = false;
+        }
         self.reasoning_effort = effort_override.or_else(|| {
             self.available
                 .get(&model_id)
                 .and_then(|info| parse_reasoning_effort_meta(info.meta.as_ref()))
         });
+    }
+
+    /// Status label for the active effort: `medium` or `medium (auto)`.
+    pub fn effort_status_label(&self) -> Option<String> {
+        self.reasoning_effort.map(|eff| {
+            if self.effort_auto {
+                format!("{} (auto)", eff.as_str())
+            } else {
+                eff.as_str().to_string()
+            }
+        })
     }
 
     /// The reasoning-effort menu for the current model. Gate-first: an unset or
@@ -321,6 +340,7 @@ impl From<Option<acp::SessionModelState>> for ModelState {
                     available: models,
                     current: current_model,
                     reasoning_effort,
+                    effort_auto: false,
                     context_window_override: None,
                 }
             })

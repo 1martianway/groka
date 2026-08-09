@@ -124,6 +124,12 @@ struct Inner {
     catalog: RwLock<CatalogState>,
     current_model_id: RwLock<acp::ModelId>,
     current_reasoning_effort: RwLock<Option<ReasoningEffort>>,
+    /// When true, the per-turn effort router must not override effort
+    /// (explicit `/effort`, `--effort`, or persona pin). Cleared by `/effort auto`.
+    effort_pinned: AtomicBool,
+    /// True when the last `reasoning_effort` stamp came from the per-turn router
+    /// (for status/log `effort: medium (auto)`). Cleared on explicit pin.
+    effort_routed: AtomicBool,
     // ── Owned context for self-contained refresh ────────────────
     auth_manager: Arc<AuthManager>,
     cfg: RwLock<config::Config>,
@@ -266,6 +272,9 @@ impl ModelsManagerBuilder {
         let has_session = self.auth_manager.current_or_expired().is_some();
         let fetch_auth = ModelFetchAuth::resolve(&self.cfg.endpoints, has_session);
         let current_reasoning_effort = self.cfg.models.default_reasoning_effort;
+        // CLI `--effort` is sticky for the process; treat as a pin so the
+        // per-turn router does not clobber it.
+        let effort_pinned = self.cfg.reasoning_effort_override.is_some();
         ModelsManager {
             inner: Arc::new(Inner {
                 catalog: RwLock::new(CatalogState {
@@ -275,6 +284,8 @@ impl ModelsManagerBuilder {
                 }),
                 current_model_id: RwLock::new(self.current_model_id),
                 current_reasoning_effort: RwLock::new(current_reasoning_effort),
+                effort_pinned: AtomicBool::new(effort_pinned),
+                effort_routed: AtomicBool::new(false),
                 auth_manager: self.auth_manager,
                 cfg: RwLock::new(self.cfg),
                 fetch_auth: RwLock::new(fetch_auth),
@@ -540,6 +551,36 @@ impl ModelsManager {
 
     pub(crate) fn set_current_reasoning_effort(&self, effort: Option<ReasoningEffort>) {
         *self.inner.current_reasoning_effort.write() = effort;
+    }
+
+    /// Explicit effort pin (`/effort`, `--effort`, persona). When true the
+    /// per-turn router leaves `sampling_config.reasoning_effort` alone.
+    pub(crate) fn effort_pinned(&self) -> bool {
+        self.inner.effort_pinned.load(Ordering::Acquire)
+    }
+
+    /// Pin or unpin effort. `/effort auto` should call with `false`.
+    /// Pinning clears the routed/auto status flag.
+    pub(crate) fn set_effort_pinned(&self, pinned: bool) {
+        self.inner.effort_pinned.store(pinned, Ordering::Release);
+        if pinned {
+            self.inner.effort_routed.store(false, Ordering::Release);
+        }
+    }
+
+    /// Whether the active effort was last chosen by the per-turn router.
+    pub(crate) fn effort_routed(&self) -> bool {
+        self.inner.effort_routed.load(Ordering::Acquire)
+    }
+
+    /// Mark effort as router-chosen (`true`) or not (`false`).
+    pub(crate) fn set_effort_routed(&self, routed: bool) {
+        self.inner.effort_routed.store(routed, Ordering::Release);
+    }
+
+    /// Snapshot of `[effort_router]` from the live config.
+    pub(crate) fn effort_router_config(&self) -> crate::agent::effort_router::EffortRouterConfig {
+        self.inner.cfg.read().effort_router.clone()
     }
 
     /// Whether the given model supports reasoning effort according to the catalog.

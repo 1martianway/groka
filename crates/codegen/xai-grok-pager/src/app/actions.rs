@@ -408,6 +408,10 @@ pub enum Action {
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
     },
+    /// `/effort auto` — re-enable the per-turn effort router (unpin).
+    EffortAuto {
+        model_id: acp::ModelId,
+    },
     /// Cancel the currently running turn.
     CancelTurn,
     /// User confirmed a cancel-turn choice from the panel.
@@ -1582,6 +1586,12 @@ pub enum Effect {
         /// `SwitchModelComplete` so `IncompatibleAgent` can roll back.
         prev_model_id: Option<acp::ModelId>,
     },
+    /// `/effort auto` — set_session_model with meta reasoningEffort=auto.
+    EffortAuto {
+        agent_id: AgentId,
+        session_id: acp::SessionId,
+        model_id: acp::ModelId,
+    },
     /// Fetch changelog from CDN (both markdown + structured JSON).
     /// Runs off the render path via `spawn_blocking`. Result is cached
     /// on `AppView` so `/release-notes` and the welcome screen share it.
@@ -2445,6 +2455,11 @@ pub enum TaskResult {
         /// Forwarded from `Effect::SwitchModel.prev_model_id` for
         /// rollback on `IncompatibleAgent`.
         prev_model_id: Option<acp::ModelId>,
+    },
+    /// `/effort auto` completed.
+    EffortAutoComplete {
+        agent_id: AgentId,
+        result: Result<(), String>,
     },
     /// Changelog fetched from CDN (both formats).
     ChangelogFetched {

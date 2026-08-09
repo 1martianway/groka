@@ -571,6 +571,29 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             result,
             prev_model_id,
         } => handle_switch_model_complete(app, agent_id, model_id, effort, result, prev_model_id),
+        TaskResult::EffortAutoComplete { agent_id, result } => {
+            if let Some(agent) = app.agents.get_mut(&agent_id) {
+                match result {
+                    Ok(()) => {
+                        agent.session.models.effort_auto = true;
+                        let status = agent
+                            .session
+                            .models
+                            .effort_status_label()
+                            .unwrap_or_else(|| "auto".to_string());
+                        agent.scrollback.push_block(RenderBlock::system(format!(
+                            "Effort router enabled ({status})"
+                        )));
+                    }
+                    Err(msg) => {
+                        agent.scrollback.push_block(RenderBlock::system(format!(
+                            "Couldn't enable effort auto: {msg}"
+                        )));
+                    }
+                }
+            }
+            vec![]
+        }
         TaskResult::BgTaskKilled {
             session_id,
             task_id,
