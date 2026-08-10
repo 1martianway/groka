@@ -30,12 +30,25 @@ medium/high. Pin (`/effort`, `--effort`, persona) wins; `/effort auto` re-enable
 
 ## Remotes
 
-- `upstream` / read-only `origin` → `xai-org/grok-build` (never push; no PR)
-- Your fork remote → e.g. `git@github.com:YOU/grok-build.git`
+- `upstream` (fetch-only) → `xai-org/grok-build`
+- `origin` → `1martianway/groka` (your fork; push here)
+
+### Sync from xAI
 
 ```sh
-git fetch upstream
-git rebase upstream/main
+./scripts/sync-upstream.sh              # fetch + merge upstream/main
+./scripts/sync-upstream.sh --dry-run    # show incoming only
+./scripts/sync-upstream.sh --stash      # stash dirty tree, sync, pop
+./scripts/sync-upstream.sh --push       # merge then push origin
+./scripts/sync-upstream.sh --rebase     # rebase instead of merge
+./scripts/sync-upstream.sh --ours       # prefer fork on conflicts
+./scripts/sync-upstream.sh --theirs     # prefer upstream on conflicts
+```
+
+`SOURCE_REV` conflicts auto-take upstream. Real conflicts exit non-zero with
+paths and fix-up commands. Then:
+
+```sh
 cargo test -p xai-grok-shell --lib effort_router
 cargo build -p xai-grok-pager-bin --release
 ./scripts/install-grok-local.sh

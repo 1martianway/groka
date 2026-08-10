@@ -722,6 +722,7 @@ pub fn render_welcome(
                 multiline: false,
                 usage_warning: None,
                 usage_warning_critical: false,
+                limit_usage_pct: None,
             };
             let (menu_rects, post_flush_escapes) = render_welcome_blocked(
                 content_area,
@@ -2190,12 +2191,18 @@ fn render_welcome_done(
             Some((text, critical)) => (Some(text), critical),
             None => (None, false),
         };
+        let limit_usage_pct = crate::views::credit_bar::limit_usage_pct_for_prompt(
+            p.credit_balance,
+            p.usage_visible,
+            false,
+        );
         let usage_info = PromptInfo {
             model_name: p.model_name,
             flags: p.flags,
             multiline: false,
             usage_warning: usage_warning_text.as_deref(),
             usage_warning_critical,
+            limit_usage_pct,
         };
 
         render_prompt_and_version(

@@ -324,6 +324,10 @@ pub struct PromptInfo<'a> {
     /// When true the warning uses the yellow warning color (<=5% left);
     /// when false it uses dim grey text (5-10% left).
     pub usage_warning_critical: bool,
+    /// Weekly/period Grok coding-limit usage percent (0–100) for a compact
+    /// progress bar left of the model name. From billing `usage_pct`, not
+    /// session context tokens. `None` hides the bar.
+    pub limit_usage_pct: Option<f64>,
 }
 
 impl PromptInfo<'_> {
@@ -332,6 +336,7 @@ impl PromptInfo<'_> {
             && self.flags.is_empty()
             && !self.multiline
             && self.usage_warning.is_none()
+            && self.limit_usage_pct.is_none()
     }
 }
 
@@ -3408,13 +3413,24 @@ impl PromptWidget {
         let sep_style = Style::default().fg(sep_fg).bg(bg);
         let flag_style = Style::default().fg(theme.gray).bg(bg);
 
-        // Left side: model name + flags. Wrap with leading/trailing spaces
-        // so the rendered cells adjacent to the corner borders (╰ / ╯) are
-        // blanked out instead of showing the underlying `─` glyphs from the
-        // bottom-border fill — giving 1 cell of visual padding on each side.
+        // Left side: [weekly limit bar] · [credit warning] · model · flags.
+        // Wrap with leading/trailing spaces so the rendered cells adjacent to
+        // the corner borders (╰ / ╯) are blanked out instead of showing the
+        // underlying `─` glyphs from the bottom-border fill — giving 1 cell of
+        // visual padding on each side.
         let pad_style = Style::default().bg(bg);
         let mut left_spans = vec![Span::styled(" ", pad_style)];
+        let mut need_sep_before_model = false;
+        if let Some(pct) = info.limit_usage_pct {
+            left_spans.extend(crate::views::credit_bar::limit_usage_prompt_spans(
+                pct, theme, bg,
+            ));
+            need_sep_before_model = true;
+        }
         if let Some(warning) = info.usage_warning {
+            if need_sep_before_model {
+                left_spans.push(Span::styled(" · ", sep_style));
+            }
             let fg = if info.usage_warning_critical {
                 theme.warning
             } else {
@@ -3422,6 +3438,9 @@ impl PromptWidget {
             };
             let warning_style = Style::default().fg(fg).bg(bg);
             left_spans.push(Span::styled(warning.to_owned(), warning_style));
+            need_sep_before_model = true;
+        }
+        if need_sep_before_model && !info.model_name.is_empty() {
             left_spans.push(Span::styled(" · ", sep_style));
         }
         left_spans.push(Span::styled(info.model_name, model_style));

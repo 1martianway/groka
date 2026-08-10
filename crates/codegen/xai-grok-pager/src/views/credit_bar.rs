@@ -241,6 +241,17 @@ pub fn usage_warning_for_session(
     }
 }
 
+/// Color for allowance/period usage percentage (weekly/monthly limit).
+fn usage_pct_color(pct: f64, theme: &Theme) -> ratatui::style::Color {
+    if pct >= 100.0 {
+        theme.accent_error
+    } else if pct >= 80.0 {
+        theme.warning
+    } else {
+        theme.accent_success
+    }
+}
+
 /// Build the credit balance indicator as a `Line<'static>`.
 ///
 /// Shows `Credits used: XX%` in the status bar.
@@ -266,18 +277,62 @@ pub fn credit_bar_line_for_session(
         return None;
     }
     let pct = balance.usage_pct;
-    let color = if pct >= 100.0 {
-        theme.accent_error
-    } else if pct >= 80.0 {
-        theme.warning
-    } else {
-        theme.accent_success
-    };
-
+    let color = usage_pct_color(pct, theme);
     let text = format!("Credits used: {pct:.0}%");
 
     let style = Style::default().fg(color).bg(theme.bg_base);
     Some(Line::from(Span::styled(text, style)))
+}
+
+/// Fixed-width progress bar for the prompt chrome: weekly/period Grok limit used.
+///
+/// Renders `████░░░░  42%` from billing allowance percent
+/// ([`CreditBalance::usage_pct`] — typically the weekly coding limit).
+pub const PROMPT_LIMIT_BAR_WIDTH: u16 = 8;
+
+/// Prompt-chrome bar spans for a period limit fill fraction (0–100+).
+///
+/// Callers gate on billing visibility / chat-kind before invoking. Values over
+/// 100 clamp for fill; the label still shows `100%`.
+pub fn limit_usage_prompt_spans(
+    usage_pct: f64,
+    theme: &Theme,
+    bg: ratatui::style::Color,
+) -> Vec<Span<'static>> {
+    let fill_pct = usage_pct.clamp(0.0, 100.0);
+    let color = usage_pct_color(usage_pct, theme);
+    let track = theme.bg_highlight;
+
+    let mut spans = crate::views::progress_bar::progress_bar_spans(
+        PROMPT_LIMIT_BAR_WIDTH,
+        (fill_pct / 100.0) as f32,
+        color,
+        track,
+    );
+    spans.push(Span::styled(" ", Style::default().bg(bg)));
+    let pct_label = if usage_pct >= 100.0 {
+        "100%".to_string()
+    } else {
+        format!("{:>3.0}%", fill_pct)
+    };
+    spans.push(Span::styled(
+        pct_label,
+        Style::default().fg(color).bg(bg),
+    ));
+    spans
+}
+
+/// Period-limit percent to show on the prompt bar, or `None` when billing UI
+/// is suppressed / unavailable (gateway chat, team without usage visibility).
+pub fn limit_usage_pct_for_prompt(
+    balance: Option<&CreditBalance>,
+    usage_visible: bool,
+    gateway_chat: bool,
+) -> Option<f64> {
+    if gateway_chat || !usage_visible {
+        return None;
+    }
+    balance.map(|b| b.usage_pct)
 }
 
 #[cfg(test)]
@@ -813,5 +868,30 @@ mod tests {
         assert!(usage_warning_for_session(&b, None, true, true).is_none());
         // Build path still renders.
         assert!(credit_bar_line_for_session(&b, false, &theme, false).is_some());
+    }
+
+    #[test]
+    fn limit_usage_prompt_bar_shows_weekly_pct() {
+        let theme = Theme::default();
+        let spans = limit_usage_prompt_spans(42.0, &theme, theme.bg_base);
+        let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            text.ends_with("42%"),
+            "expected weekly limit bar to end with 42%, got {text:?}"
+        );
+        let width: usize = spans.iter().map(|s| s.width()).sum();
+        assert!(
+            width >= 12 && width <= 14,
+            "unexpected limit bar width {width} for {text:?}"
+        );
+    }
+
+    #[test]
+    fn limit_usage_pct_for_prompt_gates_visibility() {
+        let b = bal(33.0);
+        assert_eq!(limit_usage_pct_for_prompt(Some(&b), true, false), Some(33.0));
+        assert_eq!(limit_usage_pct_for_prompt(Some(&b), false, false), None);
+        assert_eq!(limit_usage_pct_for_prompt(Some(&b), true, true), None);
+        assert_eq!(limit_usage_pct_for_prompt(None, true, false), None);
     }
 }

@@ -2877,6 +2877,7 @@ fn paint_dispatch_config_badge(
         multiline: state.multiline_mode,
         usage_warning: None,
         usage_warning_critical: false,
+        limit_usage_pct: None,
     };
     // Bottom border row, inside the corners — the same content rect the chat
     // prompt uses for its info line.
