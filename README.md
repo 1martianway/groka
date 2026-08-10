@@ -14,15 +14,14 @@ Upstream product docs: [README.upstream.md](README.upstream.md) · [x.ai/cli](ht
 ## Quick use
 
 ```sh
-# 1) Build (Rust + DotSlash required — see Prerequisites)
-cd ~/repos/grok-build   # or this worktree
-cargo build -p xai-grok-pager-bin --release
-
-# 2) Install beside official grok
+# 1) Build + install (stamps git HEAD into groka --version)
+cd ~/repos/groka   # this fork
 ./scripts/install-groka.sh
 # → ~/.local/bin/groka
 
-# 3) Keep the fork from self-replacing with the official channel
+# Or from Grok Build: /build-groka
+
+# 2) Keep the fork from self-replacing with the official channel
 #    ~/.grok/config.toml
 ```
 
@@ -184,7 +183,13 @@ cargo check -p xai-grok-pager-bin
 
 ```sh
 ./scripts/install-groka.sh
+# release-builds first (touches build.rs so the version stamp = git HEAD),
+# then copies to ~/.local/bin/groka. Fails if --version does not contain HEAD.
+# ./scripts/install-groka.sh --skip-build   # install existing release only
 ```
+
+Grok Build: `/build-groka` (or `/workflow build-groka`) runs the same script
+and checks that `groka --version` matches the short SHA.
 
 Installs to `~/.local/bin/groka` (override with `GROK_LOCAL_NAME`). Optional:
 
@@ -225,8 +230,7 @@ git fetch upstream   # or: git fetch origin  if origin is still xai-org
 git checkout your-fork-branch
 git rebase upstream/main
 cargo test -p xai-grok-shell --lib effort_router
-cargo build -p xai-grok-pager-bin --release
-./scripts/install-groka.sh
+./scripts/install-groka.sh   # or /build-groka
 ```
 
 ### Layout
