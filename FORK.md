@@ -14,12 +14,12 @@ Upstream product README: [README.upstream.md](README.upstream.md).
 Grok Build workflow (local, not GitHub Actions):
 
 ```text
-/build-groka
-# or: /workflow build-groka
+/groka
+# or: /workflow groka
 ```
 
 Runs `./scripts/install-groka.sh` and requires `groka --version` to contain the
-current short `git HEAD`. Optional: `/workflow build-groka` with
+current short `git HEAD`. Optional: `/workflow groka` with
 `{"skip_build": true}` to copy an existing release only.
 
 CI (optional artifacts): `.github/workflows/build-groka.yml` on `main` / PRs.
@@ -64,7 +64,7 @@ paths and fix-up commands. Then:
 
 ```sh
 cargo test -p xai-grok-shell --lib effort_router
-./scripts/install-groka.sh          # or /build-groka in Grok Build
+./scripts/install-groka.sh          # or /groka in Grok Build
 ```
 
 ## License

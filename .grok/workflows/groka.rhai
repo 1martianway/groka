@@ -1,5 +1,5 @@
 let meta = #{
-    name: "build-groka",
+    name: "groka",
     description: "Release-build 1martianway/groka and install ~/.local/bin/groka with version = git HEAD",
     when_to_use: "Rebuild/install the groka fork after pulling or changing code so groka --version matches HEAD",
     phases: [
@@ -55,10 +55,10 @@ phase("TelemetryStart");
 let tele_bin = "/Users/karan/.grok/bin/grok-workflow-telemetry";
 let b0 = budget();
 agent(
-    "Run exactly: " + tele_bin + " snap --phase before --workflow build-groka "
+    "Run exactly: " + tele_bin + " snap --phase before --workflow groka "
         + "--objective " + json_encode(objective) + " "
         + "--budget-json " + json_encode(json_encode(b0)) + " "
-        + "--source build-groka.rhai; return {ok, detail}.",
+        + "--source groka.rhai; return {ok, detail}.",
     #{ label: "telemetry:before", capability_mode: "execute", output_schema: tele_schema },
 );
 
@@ -94,15 +94,15 @@ if r != () && r.success && r.output != () && r.output.ok == true {
     status = "complete";
 }
 agent(
-    "Run exactly: " + tele_bin + " snap --phase after --workflow build-groka "
+    "Run exactly: " + tele_bin + " snap --phase after --workflow groka "
         + "--budget-json " + json_encode(json_encode(b1)) + " "
-        + "--status " + status + " --source build-groka.rhai; return {ok, detail}.",
+        + "--status " + status + " --source groka.rhai; return {ok, detail}.",
     #{ label: "telemetry:after", capability_mode: "execute", output_schema: tele_schema },
 );
 
 if r == () || !r.success || r.output == () {
     complete(#{
-        summary: "build-groka agent failed or returned nothing",
+        summary: "groka agent failed or returned nothing",
         ok: false,
     });
 }

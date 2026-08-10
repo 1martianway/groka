@@ -19,7 +19,7 @@ cd ~/repos/groka   # this fork
 ./scripts/install-groka.sh
 # → ~/.local/bin/groka
 
-# Or from Grok Build: /build-groka
+# Or from Grok Build: /groka
 
 # 2) Keep the fork from self-replacing with the official channel
 #    ~/.grok/config.toml
@@ -188,7 +188,7 @@ cargo check -p xai-grok-pager-bin
 # ./scripts/install-groka.sh --skip-build   # install existing release only
 ```
 
-Grok Build: `/build-groka` (or `/workflow build-groka`) runs the same script
+Grok Build: `/groka` (or `/workflow groka`) runs the same script
 and checks that `groka --version` matches the short SHA.
 
 Installs to `~/.local/bin/groka` (override with `GROK_LOCAL_NAME`). Optional:
@@ -230,7 +230,7 @@ git fetch upstream   # or: git fetch origin  if origin is still xai-org
 git checkout your-fork-branch
 git rebase upstream/main
 cargo test -p xai-grok-shell --lib effort_router
-./scripts/install-groka.sh   # or /build-groka
+./scripts/install-groka.sh   # or /groka
 ```
 
 ### Layout
