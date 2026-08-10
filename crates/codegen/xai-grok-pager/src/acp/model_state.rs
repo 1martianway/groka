@@ -185,6 +185,23 @@ impl ModelState {
         });
     }
 
+    /// Apply a per-turn router stamp without treating it as an explicit pin.
+    ///
+    /// Updates `reasoning_effort` (and optionally `current` model id) while
+    /// keeping `effort_auto = true` so the status bar shows
+    /// `medium (auto)` / `high (auto)` as the router picks.
+    pub fn apply_routed_effort(
+        &mut self,
+        model_id: acp::ModelId,
+        effort: Option<ReasoningEffort>,
+    ) {
+        self.current = Some(model_id);
+        if let Some(effort) = effort {
+            self.reasoning_effort = Some(effort);
+        }
+        self.effort_auto = true;
+    }
+
     /// Status label for the active effort: `medium` or `medium (auto)`.
     pub fn effort_status_label(&self) -> Option<String> {
         self.reasoning_effort.map(|eff| {
@@ -407,6 +424,40 @@ mod tests {
             .as_object()
             .cloned(),
         )
+    }
+
+    #[test]
+    fn apply_routed_effort_keeps_auto_and_updates_level() {
+        let id = acp::ModelId::new(Arc::from("grok-4.5"));
+        let mut state = ModelState::default();
+        state.available.insert(
+            id.clone(),
+            model_with_effort("grok-4.5", "Grok 4.5", "high"),
+        );
+        state.set_current(id.clone(), Some(ReasoningEffort::High));
+        assert!(!state.effort_auto);
+        assert_eq!(state.effort_status_label().as_deref(), Some("high"));
+
+        // Router picks medium for this turn.
+        state.apply_routed_effort(id.clone(), Some(ReasoningEffort::Medium));
+        assert!(state.effort_auto);
+        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Medium));
+        assert_eq!(
+            state.effort_status_label().as_deref(),
+            Some("medium (auto)")
+        );
+
+        // Next turn: high (auto) — still auto, level changes.
+        state.apply_routed_effort(id.clone(), Some(ReasoningEffort::High));
+        assert_eq!(
+            state.effort_status_label().as_deref(),
+            Some("high (auto)")
+        );
+
+        // Explicit pin leaves auto mode.
+        state.set_current(id, Some(ReasoningEffort::Low));
+        assert!(!state.effort_auto);
+        assert_eq!(state.effort_status_label().as_deref(), Some("low"));
     }
 
     #[test]

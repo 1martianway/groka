@@ -1869,6 +1869,10 @@ impl SessionActor {
     /// Score the latest user prompt and stamp `sampling_config.reasoning_effort`
     /// when `[effort_router]` is enabled and effort is not pinned. Never swaps
     /// the model. No-op for subagents (parent pins/persona own effort).
+    ///
+    /// Always notifies the TUI (`ModelChanged` + `effort_auto`) so the status
+    /// bar shows the **actual** routed level (`low|medium|high (auto)`), not
+    /// a stale value from `/effort auto` or the previous turn.
     pub(crate) async fn maybe_stamp_effort_router(&self) {
         if self.startup_hints.is_subagent {
             return;
@@ -1895,25 +1899,31 @@ impl SessionActor {
         else {
             return;
         };
-        // Even when the value is unchanged, mark as router-sourced so status
-        // shows `effort: medium (auto)`.
+        // Mark as router-sourced so status/log show `effort: medium (auto)`.
         self.models_manager.set_effort_routed(true);
-        if sc.reasoning_effort == Some(effort) {
-            return;
+        let previous = sc.reasoning_effort;
+        if previous != Some(effort) {
+            let status = crate::agent::effort_router::format_effort_status(effort, true);
+            tracing::debug!(
+                session_id = %self.session_info.id.0,
+                model = %sc.model,
+                previous = ?previous,
+                routed = %effort,
+                effort_status = %status,
+                "effort_router: stamping sampling_config.reasoning_effort"
+            );
+            sc.reasoning_effort = Some(effort);
+            self.chat_state_handle.update_sampling_config(sc.clone());
+            self.models_manager
+                .set_current_reasoning_effort(Some(effort));
         }
-        let status = crate::agent::effort_router::format_effort_status(effort, true);
-        tracing::debug!(
-            session_id = %self.session_info.id.0,
-            model = %sc.model,
-            previous = ?sc.reasoning_effort,
-            routed = %effort,
-            effort_status = %status,
-            "effort_router: stamping sampling_config.reasoning_effort"
-        );
-        sc.reasoning_effort = Some(effort);
-        self.chat_state_handle.update_sampling_config(sc);
-        self.models_manager
-            .set_current_reasoning_effort(Some(effort));
+        // Always push to the pager — even when the value is unchanged — so
+        // the footer tracks the live routed effort (and stays in auto mode).
+        self.send_xai_notification_transient(XaiSessionUpdate::ModelChanged {
+            model_id: sc.model.clone(),
+            reasoning_effort: Some(effort.as_str().to_string()),
+            effort_auto: true,
+        });
     }
 
     #[tracing::instrument(

@@ -288,6 +288,8 @@ fn broadcast_model_changed(
         update: crate::extensions::notification::SessionUpdate::ModelChanged {
             model_id: model_id.to_owned(),
             reasoning_effort,
+            // Explicit pin / model switch — not router-sourced.
+            effort_auto: false,
         },
         meta: None,
     };

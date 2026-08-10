@@ -918,6 +918,7 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
         XaiSessionUpdate::ModelChanged {
             model_id,
             reasoning_effort,
+            effort_auto,
         } => {
             if agent.session.model_switch_pending {
                 tracing::debug!(
@@ -949,20 +950,31 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
                 .and_then(|s| s.parse::<ReasoningEffort>().ok());
             let prev_model = agent.session.models.current.clone();
             let prev_effort = agent.session.models.reasoning_effort;
-            agent
-                .session
-                .models
-                .set_current(new_model_id.clone(), effort);
+            let prev_auto = agent.session.models.effort_auto;
+            if effort_auto {
+                // Per-turn router stamp: update effort without leaving auto mode.
+                agent
+                    .session
+                    .models
+                    .apply_routed_effort(new_model_id.clone(), effort);
+            } else {
+                agent
+                    .session
+                    .models
+                    .set_current(new_model_id.clone(), effort);
+            }
             agent.session.user_model_preference = Some(new_model_id.clone());
             let resolved_effort = agent.session.models.reasoning_effort;
-            let actually_changed =
-                prev_model.as_ref() != Some(&new_model_id) || prev_effort != resolved_effort;
+            let actually_changed = prev_model.as_ref() != Some(&new_model_id)
+                || prev_effort != resolved_effort
+                || prev_auto != agent.session.models.effort_auto;
             if actually_changed {
                 tracing::info!(
                     session_id = session_notif.session_id.0.as_ref(),
                     model_id = %model_id,
                     effort = ?resolved_effort,
-                    "ModelChanged broadcast applied (remote switch)"
+                    effort_auto = agent.session.models.effort_auto,
+                    "ModelChanged broadcast applied (remote switch or effort router)"
                 );
             }
             actually_changed

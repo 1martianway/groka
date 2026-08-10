@@ -412,6 +412,49 @@
             Some(ReasoningEffort::High),
             "follower must mirror the broadcast's reasoning_effort"
         );
+        assert!(
+            !agent.session.models.effort_auto,
+            "explicit ModelChanged must not enter auto mode"
+        );
+    }
+
+    /// Per-turn effort router stamps arrive as `ModelChanged` with
+    /// `effort_auto = true`. The status bar must show the **actual**
+    /// level for this turn (`medium (auto)` → `high (auto)`), not a
+    /// stuck floor value.
+    #[test]
+    fn model_changed_effort_auto_updates_status_label_per_turn() {
+        use xai_grok_shell::sampling::types::ReasoningEffort;
+        let mut app = make_app_with_agent("sess-1");
+        let agent = app.agents.get_mut(&AgentId(0)).unwrap();
+        seed_models(agent, "grok-4", &["grok-4"]);
+        agent.session.models.reasoning_effort = Some(ReasoningEffort::Low);
+        agent.session.models.effort_auto = true;
+        assert_eq!(
+            agent.session.models.effort_status_label().as_deref(),
+            Some("low (auto)")
+        );
+
+        let notif = model_changed_ext_with_auto("sess-1", "grok-4", Some("medium"), true);
+        assert!(handle_ext_notification(&notif, &mut app));
+        let agent = app.agents.get(&AgentId(0)).unwrap();
+        assert!(agent.session.models.effort_auto);
+        assert_eq!(
+            agent.session.models.reasoning_effort,
+            Some(ReasoningEffort::Medium)
+        );
+        assert_eq!(
+            agent.session.models.effort_status_label().as_deref(),
+            Some("medium (auto)")
+        );
+
+        let notif = model_changed_ext_with_auto("sess-1", "grok-4", Some("high"), true);
+        assert!(handle_ext_notification(&notif, &mut app));
+        let agent = app.agents.get(&AgentId(0)).unwrap();
+        assert_eq!(
+            agent.session.models.effort_status_label().as_deref(),
+            Some("high (auto)")
+        );
     }
 
     /// `ModelChanged` for a session this client doesn't own / hasn't loaded
