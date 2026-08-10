@@ -7,7 +7,7 @@ Upstream product README: [README.upstream.md](README.upstream.md).
 
 ```sh
 cargo build -p xai-grok-pager-bin --release && ./scripts/install-grok-local.sh
-# ~/.local/bin/grok-local  — set [cli] auto_update=false
+# ~/.local/bin/groka  — set [cli] auto_update=false
 ```
 
 ## Config

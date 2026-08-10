@@ -1,9 +1,9 @@
-# Grok Build fork — per-turn effort router (`grok-local`)
+# Grok Build fork — per-turn effort router (`groka`)
 
 Thin personal fork of [xai-org/grok-build](https://github.com/xai-org/grok-build) (Apache-2.0).  
 Adds a **heuristic effort router** so sessions stop always shipping **grok-4.5 high** on every turn.
 
-Official `grok` stays on PATH. This tree installs beside it as **`grok-local`** (optional alias `kgrok`).
+Official `grok` stays on PATH. This tree installs beside it as **`groka`** (optional alias `kgrok`).
 
 **Do not open a PR against `xai-org/grok-build`.** Push only to your own remote.
 
@@ -20,7 +20,7 @@ cargo build -p xai-grok-pager-bin --release
 
 # 2) Install beside official grok
 ./scripts/install-grok-local.sh
-# → ~/.local/bin/grok-local
+# → ~/.local/bin/groka
 
 # 3) Keep the fork from self-replacing with the official channel
 #    ~/.grok/config.toml
@@ -40,7 +40,7 @@ ceiling = "high"
 ```sh
 # 4) Run
 export PATH="$HOME/.local/bin:$PATH"
-grok-local
+groka
 
 # Pin when you want a fixed effort; auto re-enables the router
 #   /effort low | medium | high | auto
@@ -123,7 +123,7 @@ auto_update = false
 CLI pin (sticky until changed):
 
 ```sh
-grok-local --effort low
+groka --effort low
 # or inside the TUI:
 # /effort high
 # /effort auto
@@ -180,13 +180,13 @@ Fast compile check (no binary):
 cargo check -p xai-grok-pager-bin
 ```
 
-### Install as `grok-local`
+### Install as `groka`
 
 ```sh
 ./scripts/install-grok-local.sh
 ```
 
-The script prefers `./target/release/xai-grok-pager`, then falls back to a sibling `~/repos/grok-build` release binary. Optional:
+Installs to `~/.local/bin/groka` (override with `GROK_LOCAL_NAME`). Optional:
 
 ```sh
 GROK_LOCAL_ALIAS_KGROK=1 ./scripts/install-grok-local.sh   # also ~/.local/bin/kgrok
@@ -196,10 +196,10 @@ Manual:
 
 ```sh
 mkdir -p "$HOME/.local/bin"
-install -m 755 target/release/xai-grok-pager "$HOME/.local/bin/grok-local"
+install -m 755 target/release/xai-grok-pager "$HOME/.local/bin/groka"
 export PATH="$HOME/.local/bin:$PATH"
-which grok-local
-grok-local --version
+which groka
+groka --version
 which grok   # still official
 ```
 
@@ -235,7 +235,7 @@ cargo build -p xai-grok-pager-bin --release
 |------|------|
 | This repo / worktree | Fork source + effort_router patch |
 | `target/release/xai-grok-pager` | Release binary name (package `xai-grok-pager-bin`) |
-| `~/.local/bin/grok-local` | Installed fork CLI |
+| `~/.local/bin/groka` | Installed fork CLI |
 | Official `grok` install | Unchanged managed binary |
 | `~/.grok/config.toml` | Shared config (`[cli]`, `[effort_router]`, models, …) |
 | `FORK.md` | Compact operational notes (same fork) |

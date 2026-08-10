@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Install the fork binary as grok-local (and optional kgrok) on PATH.
+# Install the fork binary as groka (and optional kgrok) on PATH.
 # Uses only this repo's release build so an upstream tree cannot shadow the patch.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="${GROK_LOCAL_BIN_DIR:-$HOME/.local/bin}"
-NAME="${GROK_LOCAL_NAME:-grok-local}"
+NAME="${GROK_LOCAL_NAME:-groka}"
 SRC="${ROOT}/target/release/xai-grok-pager"
 
 if [[ ! -x "$SRC" ]]; then
