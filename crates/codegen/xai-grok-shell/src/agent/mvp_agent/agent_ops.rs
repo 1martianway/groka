@@ -3313,43 +3313,14 @@ impl MvpAgent {
                 .and_then(|sid| self.resident_handle(sid).map(|h| h.model_id.clone())),
             &self.models_manager.current_model_id(),
         );
-        let mut available_models: Vec<acp::ModelInfo> = self
-            .models_manager
-            .available()
-            .values()
-            .cloned()
-            .collect();
         let override_effort = session_id
             .and_then(|sid| self.resident_handle(sid).map(|h| h.reasoning_effort))
             .flatten()
             .or_else(|| self.models_manager.current_reasoning_effort());
-        // Router enabled + unpinned ⇒ UI shows `low (auto)` (or the last
-        // routed level) rather than a naked catalog default.
-        let effort_auto = self.models_manager.effort_router_config().enabled
-            && !self.models_manager.effort_pinned();
-        if let Some(info) = available_models
-            .iter_mut()
-            .find(|info| info.model_id == model_id)
-            && supports_reasoning_effort_meta(info.meta.as_ref())
-        {
-            let mut map = info.meta.clone().unwrap_or_default();
-            if let Some(override_effort) = override_effort {
-                map.insert(
-                    REASONING_EFFORT_META_KEY.to_string(),
-                    reasoning_effort_meta_value(override_effort),
-                );
-            }
-            if effort_auto {
-                map.insert(
-                    crate::agent::effort_router::EFFORT_AUTO_META_KEY.to_string(),
-                    serde_json::Value::Bool(true),
-                );
-            } else {
-                map.remove(crate::agent::effort_router::EFFORT_AUTO_META_KEY);
-            }
-            info.meta = Some(map);
-        }
-        acp::SessionModelState::new(model_id, available_models)
+        // Stamps floor/routed effort + effortAuto so the status bar starts at
+        // `low (auto)` and catalog refreshes keep that mode (see ModelsManager).
+        self.models_manager
+            .to_session_model_state(model_id, override_effort)
     }
     pub(super) fn session_config_options(
         &self,

@@ -822,6 +822,52 @@ fn current_reasoning_effort_defaults_to_router_floor_auto() {
 }
 
 #[test]
+fn to_session_model_state_stamps_effort_auto_when_router_on() {
+    use xai_grok_sampling_types::{REASONING_EFFORT_META_KEY, ReasoningEffort};
+
+    let tmp = std::env::temp_dir().join("grok-test-models-manager-session-stamp");
+    let auth_manager = Arc::new(AuthManager::new(&tmp, GrokComConfig::default()));
+    let mut cfg = config::Config::default();
+    assert!(cfg.effort_router.enabled);
+
+    // Minimal reasoning-capable catalog entry.
+    let mut models = IndexMap::new();
+    let mut entry = ModelEntry {
+        info: config::ModelInfo::fallback("grok-4.5"),
+        api_key: None,
+        env_key: None,
+        auth_provider: None,
+        api_base_url: None,
+    };
+    entry.info.supports_reasoning_effort = true;
+    entry.info.reasoning_effort = Some(ReasoningEffort::High);
+    entry.info.user_selectable = true;
+    models.insert("grok-4.5".to_string(), entry);
+
+    let mid = acp::ModelId::new("grok-4.5");
+    let mgr = ModelsManager::new(None, models, mid.clone(), auth_manager, cfg);
+    let state = mgr.to_session_model_state(mid.clone(), mgr.current_reasoning_effort());
+    let current = state
+        .available_models
+        .iter()
+        .find(|m| m.model_id == mid)
+        .expect("current model in catalog");
+    let meta = current.meta.as_ref().expect("meta stamped");
+    assert_eq!(
+        meta.get(REASONING_EFFORT_META_KEY)
+            .and_then(|v| v.as_str()),
+        Some("low"),
+        "override floor must win over catalog high"
+    );
+    assert_eq!(
+        meta.get(crate::agent::effort_router::EFFORT_AUTO_META_KEY)
+            .and_then(|v| v.as_bool()),
+        Some(true),
+        "router-on must stamp effortAuto for status bar"
+    );
+}
+
+#[test]
 fn effort_pin_seeded_from_cli_override_and_toggles() {
     let tmp = std::env::temp_dir().join("grok-test-models-manager-effort-pin");
     let auth_manager = Arc::new(AuthManager::new(&tmp, GrokComConfig::default()));

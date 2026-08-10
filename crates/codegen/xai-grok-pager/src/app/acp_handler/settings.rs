@@ -13,7 +13,7 @@ pub(super) fn handle_models_update(notif: &acp::ExtNotification, app: &mut AppVi
 
         let shell_fallback_current = new_models.current.clone();
 
-        // Override app-level default with the active agent's model.
+        // Override app-level default with the active agent's model / effort.
         let mut app_models = new_models.clone();
         if let ActiveView::Agent(id) = app.active_view
             && let Some(agent) = app.agents.get(&id)
@@ -21,6 +21,10 @@ pub(super) fn handle_models_update(notif: &acp::ExtNotification, app: &mut AppVi
             && app_models.available.contains_key(agent_model)
         {
             app_models.current = Some(agent_model.clone());
+            // Prefer the session's live effort/auto over catalog statics so a
+            // models/update cannot flash a naked pin in the status bar.
+            app_models.reasoning_effort = agent.session.models.reasoning_effort;
+            app_models.effort_auto = agent.session.models.effort_auto;
         }
 
         app.models = app_models;
@@ -39,6 +43,10 @@ pub(super) fn handle_models_update(notif: &acp::ExtNotification, app: &mut AppVi
                     "models update removed this agent's current model; falling back"
                 );
             }
+            // `update_catalog` preserves session effort when the model is
+            // unchanged and never clears `effort_auto` — only the catalog list
+            // is refreshed. Shell stamps `effortAuto` on the broadcast so a
+            // brand-new agent (or welcome) still lands on `low (auto)`.
             agent
                 .session
                 .models

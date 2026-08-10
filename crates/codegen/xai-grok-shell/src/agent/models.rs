@@ -16,7 +16,10 @@ use crate::auth::{AuthManager, GrokAuth, GrokComConfig};
 use crate::remote::{FetchModelsResult, fetch_models_blocking};
 use crate::sampling::SamplerConfig as SamplingConfig;
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use xai_grok_sampling_types::{ReasoningEffort, ReasoningEffortOption};
+use xai_grok_sampling_types::{
+    REASONING_EFFORT_META_KEY, ReasoningEffort, ReasoningEffortOption, reasoning_effort_meta_value,
+    supports_reasoning_effort_meta,
+};
 
 // ── Auth method for model fetching ──────────────────────────────────────────
 
@@ -596,6 +599,45 @@ impl ModelsManager {
         self.inner.cfg.read().effort_router.clone()
     }
 
+    /// Build ACP `SessionModelState` for clients, stamping the effective
+    /// reasoning effort and `effortAuto` when the per-turn router is live.
+    ///
+    /// Used by `initialize` / `session/new` and by `x.ai/models/update` so a
+    /// catalog refresh cannot wipe the status bar back to a naked `low`.
+    pub(crate) fn to_session_model_state(
+        &self,
+        current_model_id: acp::ModelId,
+        override_effort: Option<ReasoningEffort>,
+    ) -> acp::SessionModelState {
+        let mut available_models: Vec<acp::ModelInfo> =
+            self.available().values().cloned().collect();
+        // Router on + unpinned ⇒ UI shows `low (auto)` (or the last routed level).
+        let effort_auto = self.effort_router_config().enabled && !self.effort_pinned();
+        if let Some(info) = available_models
+            .iter_mut()
+            .find(|info| info.model_id == current_model_id)
+            && supports_reasoning_effort_meta(info.meta.as_ref())
+        {
+            let mut map = info.meta.clone().unwrap_or_default();
+            if let Some(override_effort) = override_effort {
+                map.insert(
+                    REASONING_EFFORT_META_KEY.to_string(),
+                    reasoning_effort_meta_value(override_effort),
+                );
+            }
+            if effort_auto {
+                map.insert(
+                    crate::agent::effort_router::EFFORT_AUTO_META_KEY.to_string(),
+                    serde_json::Value::Bool(true),
+                );
+            } else {
+                map.remove(crate::agent::effort_router::EFFORT_AUTO_META_KEY);
+            }
+            info.meta = Some(map);
+        }
+        acp::SessionModelState::new(current_model_id, available_models)
+    }
+
     /// Whether the given model supports reasoning effort according to the catalog.
     pub(crate) fn model_supports_reasoning_effort(&self, model_id: &str) -> bool {
         self.inner
@@ -825,20 +867,19 @@ impl ModelsManager {
     }
 
     fn notify_models_updated(&self) {
-        let available = self.available();
         let current = self.current_model_id();
-        let count = available.len();
+        // Stamp override effort + effortAuto so catalog refreshes don't
+        // clobber the status bar back to a naked catalog default.
+        let model_state = self.to_session_model_state(current.clone(), self.current_reasoning_effort());
         xai_grok_telemetry::unified_log::info(
             "model catalog: notifying clients",
             None,
             Some(serde_json::json!({
-                "model_count": count,
+                "model_count": model_state.available_models.len(),
                 "current_model_id": current.0.as_ref(),
             })),
         );
         if let Some(ref gw) = *self.inner.gateway.read() {
-            let model_state =
-                acp::SessionModelState::new(current, available.values().cloned().collect());
             if let Ok(params) = serde_json::value::to_raw_value(&model_state) {
                 gw.forward_fire_and_forget(acp::ExtNotification::new(
                     "x.ai/models/update",

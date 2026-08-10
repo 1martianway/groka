@@ -46,31 +46,37 @@ impl SlashCommand for EffortCommand {
 
     fn suggest_args(&self, ctx: &AppCtx, _args_query: &str) -> Option<Vec<ArgItem>> {
         let options = ctx.models.reasoning_effort_options();
-        if options.is_empty() {
-            // Still offer auto so users can re-enable the router.
-            return Some(vec![ArgItem {
-                display: "auto".into(),
-                insert_text: "auto".into(),
-                match_text: "a auto".into(),
-                description: "Re-enable per-turn effort router".into(),
-            }]);
-        }
-        let mut items = build_effort_arg_items(
-            &options,
-            ctx.models.reasoning_effort,
-            true,
-            |option| option.id.clone(),
-        );
-        items.push(ArgItem {
+        // Auto is the fork default (per-turn router). List it first with a
+        // capital A; only one of Auto vs a pin level may be marked active.
+        let auto_item = ArgItem {
             display: if ctx.models.effort_auto {
-                "auto (active)".into()
+                "Auto (active)".into()
             } else {
-                "auto".into()
+                "Auto".into()
             },
             insert_text: "auto".into(),
-            match_text: "z auto".into(),
-            description: "Re-enable per-turn effort router".into(),
+            match_text: "a auto".into(),
+            description: "Per-turn effort router (default)".into(),
+        };
+        if options.is_empty() {
+            return Some(vec![auto_item]);
+        }
+        // When auto mode is on, do not also mark the current level as active
+        // (that made both `low` and `auto` show active).
+        let pin_effort = if ctx.models.effort_auto {
+            None
+        } else {
+            ctx.models.reasoning_effort
+        };
+        let mut items = build_effort_arg_items(&options, pin_effort, true, |option| {
+            option.id.clone()
         });
+        // Levels sit under Auto: re-prefix sort keys to start at 'b'.
+        for (i, item) in items.iter_mut().enumerate() {
+            let sort_prefix = char::from(b'b' + i as u8);
+            item.match_text = format!("{sort_prefix} {}", item.insert_text);
+        }
+        items.insert(0, auto_item);
         Some(items)
     }
 
@@ -389,6 +395,7 @@ mod tests {
         let items = cmd.suggest_args(&ctx, "").unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].insert_text, "auto");
+        assert_eq!(items[0].display, "Auto");
 
         let mut plain = ModelState::default();
         let (id, info) = plain_model("grok-4.5", "Grok 4.5");
@@ -406,10 +413,11 @@ mod tests {
         let items = cmd.suggest_args(&ctx, "").unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].insert_text, "auto");
+        assert_eq!(items[0].display, "Auto");
     }
 
     #[test]
-    fn suggest_args_lists_levels_with_active_marker() {
+    fn suggest_args_lists_auto_first_with_active_marker_on_pin() {
         let mut state = ModelState::default();
         let (id, info) = model_with_reasoning("reasoning-x", "Reasoning X");
         state.available.insert(id.clone(), info);
@@ -427,15 +435,49 @@ mod tests {
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         let items = cmd.suggest_args(&ctx, "").unwrap();
-        // Legacy levels + trailing `auto`.
+        // Auto first, then legacy levels (strongest → weakest).
         assert_eq!(items.len(), EFFORT_LEVELS.len() + 1);
-        assert_eq!(items[0].insert_text, "xhigh");
-        assert_eq!(items[1].insert_text, "high");
-        assert_eq!(items[1].display, "high (active)");
-        assert_eq!(items[2].insert_text, "medium");
-        assert_eq!(items[3].insert_text, "low");
-        assert_eq!(items[4].insert_text, "auto");
+        assert_eq!(items[0].insert_text, "auto");
+        assert_eq!(items[0].display, "Auto");
         assert!(items[0].match_text.starts_with("a "));
-        assert!(items[3].match_text.starts_with("d "));
+        assert_eq!(items[1].insert_text, "xhigh");
+        assert_eq!(items[2].insert_text, "high");
+        assert_eq!(items[2].display, "high (active)");
+        assert_eq!(items[3].insert_text, "medium");
+        assert_eq!(items[4].insert_text, "low");
+        assert!(items[1].match_text.starts_with("b "));
+        assert!(items[4].match_text.starts_with("e "));
+    }
+
+    #[test]
+    fn suggest_args_auto_mode_marks_only_auto_active() {
+        // Router default: floor effort is low but mode is auto — only Auto
+        // should show (active), not both low and auto.
+        let mut state = ModelState::default();
+        let (id, info) = model_with_reasoning("reasoning-x", "Reasoning X");
+        state.available.insert(id.clone(), info);
+        state.current = Some(id);
+        state.reasoning_effort = Some(ReasoningEffort::Low);
+        state.effort_auto = true;
+
+        let cmd = EffortCommand;
+        let ctx = AppCtx {
+            models: &state,
+            cwd: std::path::Path::new("."),
+            has_session_announcements: false,
+            billing_surface_visible: true,
+            usage_command_visible: true,
+            workflows_available: true,
+            screen_mode: crate::app::ScreenMode::Fullscreen,
+        };
+        let items = cmd.suggest_args(&ctx, "").unwrap();
+        assert_eq!(items[0].display, "Auto (active)");
+        let active_count = items
+            .iter()
+            .filter(|i| i.display.contains("(active)"))
+            .count();
+        assert_eq!(active_count, 1, "exactly one active row: {items:?}");
+        let low = items.iter().find(|i| i.insert_text == "low").unwrap();
+        assert_eq!(low.display, "low", "low must not be active while auto is on");
     }
 }
