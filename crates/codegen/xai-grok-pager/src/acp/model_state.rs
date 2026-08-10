@@ -349,15 +349,25 @@ impl From<Option<acp::SessionModelState>> for ModelState {
                 let current_model = models
                     .contains_key(&state.current_model_id)
                     .then_some(state.current_model_id);
-                let reasoning_effort = current_model
+                let current_meta = current_model
                     .as_ref()
                     .and_then(|id| models.get(id))
-                    .and_then(|info| parse_reasoning_effort_meta(info.meta.as_ref()));
+                    .and_then(|info| info.meta.as_ref());
+                let reasoning_effort = parse_reasoning_effort_meta(current_meta);
+                // Shell stamps `effortAuto: true` when the per-turn router is
+                // active (default on this fork) so the status bar starts as
+                // `low (auto)` rather than a pinned catalog default.
+                let effort_auto = current_meta
+                    .and_then(|m| {
+                        m.get(xai_grok_shell::agent::effort_router::EFFORT_AUTO_META_KEY)
+                    })
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 Self {
                     available: models,
                     current: current_model,
                     reasoning_effort,
-                    effort_auto: false,
+                    effort_auto,
                     context_window_override: None,
                 }
             })
@@ -424,6 +434,31 @@ mod tests {
             .as_object()
             .cloned(),
         )
+    }
+
+    #[test]
+    fn from_session_model_state_reads_effort_auto_meta() {
+        let id = acp::ModelId::new(Arc::from("grok-4.5"));
+        let info = acp::ModelInfo::new(id.clone(), "Grok 4.5".to_string()).meta(
+            serde_json::json!({
+                "supportsReasoningEffort": true,
+                "reasoningEffort": "low",
+                "effortAuto": true,
+            })
+            .as_object()
+            .cloned(),
+        );
+        let state = ModelState::from(Some(acp::SessionModelState::new(
+            id.clone(),
+            vec![info],
+        )));
+        assert_eq!(state.current, Some(id));
+        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Low));
+        assert!(state.effort_auto);
+        assert_eq!(
+            state.effort_status_label().as_deref(),
+            Some("low (auto)")
+        );
     }
 
     #[test]

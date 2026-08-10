@@ -3323,17 +3323,30 @@ impl MvpAgent {
             .and_then(|sid| self.resident_handle(sid).map(|h| h.reasoning_effort))
             .flatten()
             .or_else(|| self.models_manager.current_reasoning_effort());
-        if let Some(override_effort) = override_effort
-            && let Some(info) = available_models
-                .iter_mut()
-                .find(|info| info.model_id == model_id)
+        // Router enabled + unpinned ⇒ UI shows `low (auto)` (or the last
+        // routed level) rather than a naked catalog default.
+        let effort_auto = self.models_manager.effort_router_config().enabled
+            && !self.models_manager.effort_pinned();
+        if let Some(info) = available_models
+            .iter_mut()
+            .find(|info| info.model_id == model_id)
             && supports_reasoning_effort_meta(info.meta.as_ref())
         {
             let mut map = info.meta.clone().unwrap_or_default();
-            map.insert(
-                REASONING_EFFORT_META_KEY.to_string(),
-                reasoning_effort_meta_value(override_effort),
-            );
+            if let Some(override_effort) = override_effort {
+                map.insert(
+                    REASONING_EFFORT_META_KEY.to_string(),
+                    reasoning_effort_meta_value(override_effort),
+                );
+            }
+            if effort_auto {
+                map.insert(
+                    crate::agent::effort_router::EFFORT_AUTO_META_KEY.to_string(),
+                    serde_json::Value::Bool(true),
+                );
+            } else {
+                map.remove(crate::agent::effort_router::EFFORT_AUTO_META_KEY);
+            }
             info.meta = Some(map);
         }
         acp::SessionModelState::new(model_id, available_models)
