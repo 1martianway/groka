@@ -6,9 +6,12 @@ Upstream product README: [README.upstream.md](README.upstream.md).
 ## One-liner
 
 ```sh
-cargo build -p xai-grok-pager-bin --release && ./scripts/install-grok-local.sh
+cargo build -p xai-grok-pager-bin --release && ./scripts/install-groka.sh
 # ~/.local/bin/groka  — set [cli] auto_update=false
 ```
+
+CI: `.github/workflows/build-groka.yml` builds release binaries on `main` / PRs
+(and `workflow_dispatch`) and uploads `groka-linux-x86_64` / `groka-macos-aarch64`.
 
 ## Config
 
@@ -51,7 +54,7 @@ paths and fix-up commands. Then:
 ```sh
 cargo test -p xai-grok-shell --lib effort_router
 cargo build -p xai-grok-pager-bin --release
-./scripts/install-grok-local.sh
+./scripts/install-groka.sh
 ```
 
 ## License

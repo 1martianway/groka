@@ -19,7 +19,7 @@ cd ~/repos/grok-build   # or this worktree
 cargo build -p xai-grok-pager-bin --release
 
 # 2) Install beside official grok
-./scripts/install-grok-local.sh
+./scripts/install-groka.sh
 # → ~/.local/bin/groka
 
 # 3) Keep the fork from self-replacing with the official channel
@@ -183,13 +183,13 @@ cargo check -p xai-grok-pager-bin
 ### Install as `groka`
 
 ```sh
-./scripts/install-grok-local.sh
+./scripts/install-groka.sh
 ```
 
 Installs to `~/.local/bin/groka` (override with `GROK_LOCAL_NAME`). Optional:
 
 ```sh
-GROK_LOCAL_ALIAS_KGROK=1 ./scripts/install-grok-local.sh   # also ~/.local/bin/kgrok
+GROK_LOCAL_ALIAS_KGROK=1 ./scripts/install-groka.sh   # also ~/.local/bin/kgrok
 ```
 
 Manual:
@@ -226,7 +226,7 @@ git checkout your-fork-branch
 git rebase upstream/main
 cargo test -p xai-grok-shell --lib effort_router
 cargo build -p xai-grok-pager-bin --release
-./scripts/install-grok-local.sh
+./scripts/install-groka.sh
 ```
 
 ### Layout

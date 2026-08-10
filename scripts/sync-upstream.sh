@@ -256,7 +256,7 @@ echo
 MISSING=0
 for path in \
   crates/codegen/xai-grok-shell/src/agent/effort_router.rs \
-  scripts/install-grok-local.sh \
+  scripts/install-groka.sh \
   FORK.md
 do
   if [[ ! -e "$path" ]]; then
