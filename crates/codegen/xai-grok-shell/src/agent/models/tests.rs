@@ -794,6 +794,54 @@ fn current_reasoning_effort_seeded_from_config() {
 }
 
 #[test]
+fn effort_pin_seeded_from_cli_override_and_toggles() {
+    let tmp = std::env::temp_dir().join("grok-test-models-manager-effort-pin");
+    let auth_manager = Arc::new(AuthManager::new(&tmp, GrokComConfig::default()));
+    let mut cfg = config::Config::default();
+    cfg.reasoning_effort_override = Some(ReasoningEffort::Low);
+    let mgr = ModelsManager::new(
+        None,
+        IndexMap::new(),
+        acp::ModelId::new("default"),
+        auth_manager,
+        cfg,
+    );
+    assert!(mgr.effort_pinned(), "CLI --effort must pin router off");
+    assert_eq!(
+        mgr.effort_router_config(),
+        crate::agent::effort_router::EffortRouterConfig::default()
+    );
+    mgr.set_effort_pinned(false);
+    assert!(!mgr.effort_pinned());
+}
+
+#[test]
+fn effort_not_pinned_without_cli_override() {
+    let mgr = test_manager();
+    assert!(!mgr.effort_pinned());
+}
+
+#[test]
+fn effort_auto_unpins_and_clears_routed_until_stamp() {
+    let mgr = test_manager();
+    mgr.set_effort_routed(true);
+    assert!(mgr.effort_routed());
+    // Pinning (explicit `/effort high`) clears routed/auto mark.
+    mgr.set_effort_pinned(true);
+    assert!(mgr.effort_pinned());
+    assert!(!mgr.effort_routed());
+
+    // `/effort auto` re-enables router.
+    mgr.set_effort_pinned(false);
+    assert!(!mgr.effort_pinned());
+    mgr.set_effort_routed(true);
+    assert!(mgr.effort_routed());
+    // Pin again clears auto mark.
+    mgr.set_effort_pinned(true);
+    assert!(!mgr.effort_routed());
+}
+
+#[test]
 fn default_reasoning_effort_only_stamps_supporting_model() {
     use indexmap::IndexMap;
 

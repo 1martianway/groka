@@ -829,6 +829,11 @@ pub enum SessionUpdate {
         /// does not support reasoning effort or no effort override was applied.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reasoning_effort: Option<String>,
+        /// When true, effort was chosen by the per-turn router (status shows
+        /// `medium (auto)`). Default false for pin / explicit `/effort` /
+        /// model switches. Omitted on the wire when false for older clients.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        effort_auto: bool,
     },
     /// Streaming chunk of a tool call's arguments.
     ///
@@ -2236,15 +2241,21 @@ mod tests {
         let with_effort = SessionUpdate::ModelChanged {
             model_id: "grok-4".into(),
             reasoning_effort: Some("high".into()),
+            effort_auto: false,
         };
         let json = serde_json::to_value(&with_effort).unwrap();
         assert_eq!(json["sessionUpdate"], "model_changed");
         assert_eq!(json["model_id"], "grok-4");
         assert_eq!(json["reasoning_effort"], "high");
+        assert!(
+            json.get("effort_auto").is_none(),
+            "effort_auto=false must be omitted on the wire"
+        );
 
         let without_effort = SessionUpdate::ModelChanged {
             model_id: "grok-3".into(),
             reasoning_effort: None,
+            effort_auto: false,
         };
         let json = serde_json::to_value(&without_effort).unwrap();
         assert_eq!(json["sessionUpdate"], "model_changed");
@@ -2254,6 +2265,15 @@ mod tests {
             "reasoning_effort: None must be skipped on the wire so old pagers \
              and third-party ACP clients see a smaller, no-extra-keys payload"
         );
+
+        let auto = SessionUpdate::ModelChanged {
+            model_id: "grok-4".into(),
+            reasoning_effort: Some("medium".into()),
+            effort_auto: true,
+        };
+        let json = serde_json::to_value(&auto).unwrap();
+        assert_eq!(json["effort_auto"], true);
+        assert_eq!(json["reasoning_effort"], "medium");
     }
 
     /// `ModelChanged` round-trips through JSON: a follower client deserializes
@@ -2266,6 +2286,7 @@ mod tests {
         let original = SessionUpdate::ModelChanged {
             model_id: "grok-4".into(),
             reasoning_effort: Some("medium".into()),
+            effort_auto: true,
         };
         let json_str = serde_json::to_string(&original).unwrap();
         let parsed: SessionUpdate = serde_json::from_str(&json_str).unwrap();
@@ -2287,6 +2308,7 @@ mod tests {
             update: SessionUpdate::ModelChanged {
                 model_id: "grok-4".into(),
                 reasoning_effort: None,
+                effort_auto: false,
             },
             meta: None,
         };

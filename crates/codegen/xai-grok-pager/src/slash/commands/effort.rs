@@ -2,6 +2,8 @@
 //!
 //! Thin wrapper over `Action::SwitchModel` with the session's current model
 //! id and the chosen effort (same wire path as `/model <name> <effort>`).
+//!
+//! `/effort auto` re-enables the per-turn effort router (unpins).
 
 use crate::app::actions::Action;
 use crate::slash::command::{AppCtx, ArgItem, CommandExecCtx, CommandResult, SlashCommand};
@@ -16,7 +18,7 @@ impl SlashCommand for EffortCommand {
     }
 
     fn description(&self) -> &str {
-        "Set reasoning effort for the current model"
+        "Set reasoning effort for the current model (or auto)"
     }
 
     fn session_scoped(&self) -> bool {
@@ -26,7 +28,8 @@ impl SlashCommand for EffortCommand {
     fn usage(&self) -> &str {
         // Levels are model-specific; empty-args and UnknownToken errors list
         // the active model's offered option ids instead of a hardcoded set.
-        "/effort <level>"
+        // `auto` re-enables the per-turn router.
+        "/effort <level|auto>"
     }
 
     fn takes_args(&self) -> bool {
@@ -38,20 +41,37 @@ impl SlashCommand for EffortCommand {
     }
 
     fn arg_placeholder(&self) -> Option<&str> {
-        Some("<level>")
+        Some("<level|auto>")
     }
 
     fn suggest_args(&self, ctx: &AppCtx, _args_query: &str) -> Option<Vec<ArgItem>> {
         let options = ctx.models.reasoning_effort_options();
         if options.is_empty() {
-            return None;
+            // Still offer auto so users can re-enable the router.
+            return Some(vec![ArgItem {
+                display: "auto".into(),
+                insert_text: "auto".into(),
+                match_text: "a auto".into(),
+                description: "Re-enable per-turn effort router".into(),
+            }]);
         }
-        Some(build_effort_arg_items(
+        let mut items = build_effort_arg_items(
             &options,
             ctx.models.reasoning_effort,
             true,
             |option| option.id.clone(),
-        ))
+        );
+        items.push(ArgItem {
+            display: if ctx.models.effort_auto {
+                "auto (active)".into()
+            } else {
+                "auto".into()
+            },
+            insert_text: "auto".into(),
+            match_text: "z auto".into(),
+            description: "Re-enable per-turn effort router".into(),
+        });
+        Some(items)
     }
 
     fn run(&self, ctx: &mut CommandExecCtx, args: &str) -> CommandResult {
@@ -67,17 +87,24 @@ impl SlashCommand for EffortCommand {
                 .into_iter()
                 .map(|opt| opt.id)
                 .collect();
-            let current = ctx
-                .models
-                .reasoning_effort
-                .map(|e| format!(" (current: {e})"))
-                .unwrap_or_default();
-            let levels = if offered.is_empty() {
-                "<level>".to_string()
+            let current = if ctx.models.effort_auto {
+                " (current: auto)".to_string()
             } else {
-                offered.join("|")
+                ctx.models
+                    .reasoning_effort
+                    .map(|e| format!(" (current: {e})"))
+                    .unwrap_or_default()
+            };
+            let levels = if offered.is_empty() {
+                "level|auto".to_string()
+            } else {
+                format!("{}|auto", offered.join("|"))
             };
             return CommandResult::Error(format!("Usage: /effort <{levels}>{current}"));
+        }
+
+        if trimmed.eq_ignore_ascii_case("auto") {
+            return CommandResult::Action(Action::EffortAuto { model_id });
         }
 
         // Same gate-first policy as the CLI (`--effort`) and headless.
@@ -157,8 +184,8 @@ mod tests {
         match result {
             CommandResult::Error(msg) => {
                 assert!(msg.contains("Usage: /effort"));
-                // Legacy menu option ids only — not none/minimal.
-                assert!(msg.contains("xhigh|high|medium|low"), "msg={msg}");
+                // Legacy menu option ids only — not none/minimal; always includes auto.
+                assert!(msg.contains("xhigh|high|medium|low|auto"), "msg={msg}");
                 assert!(msg.contains("current: medium"));
                 assert!(!msg.contains("none"));
                 assert!(!msg.contains("minimal"));
@@ -202,6 +229,37 @@ mod tests {
             }
             other => panic!("expected SwitchModel with effort, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn auto_dispatches_effort_auto_on_current() {
+        let mut state = ModelState::default();
+        let (id, info) = model_with_reasoning("reasoning-x", "Reasoning X");
+        state.available.insert(id.clone(), info);
+        state.current = Some(id.clone());
+        let mut ctx = dummy_exec_ctx(&state);
+        match EffortCommand.run(&mut ctx, "auto") {
+            CommandResult::Action(Action::EffortAuto { model_id }) => {
+                assert_eq!(model_id, id);
+            }
+            other => panic!("expected EffortAuto, got {other:?}"),
+        }
+        match EffortCommand.run(&mut ctx, "AUTO") {
+            CommandResult::Action(Action::EffortAuto { .. }) => {}
+            other => panic!("expected case-insensitive EffortAuto, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn effort_status_label_marks_auto() {
+        let mut state = ModelState::default();
+        state.reasoning_effort = Some(ReasoningEffort::Medium);
+        assert_eq!(state.effort_status_label().as_deref(), Some("medium"));
+        state.effort_auto = true;
+        assert_eq!(
+            state.effort_status_label().as_deref(),
+            Some("medium (auto)")
+        );
     }
 
     #[test]
@@ -316,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn suggest_args_none_without_current_or_support() {
+    fn suggest_args_offers_auto_without_current_or_support() {
         let cmd = EffortCommand;
         let empty = ModelState::default();
         let ctx = AppCtx {
@@ -328,7 +386,9 @@ mod tests {
             workflows_available: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
-        assert!(cmd.suggest_args(&ctx, "").is_none());
+        let items = cmd.suggest_args(&ctx, "").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].insert_text, "auto");
 
         let mut plain = ModelState::default();
         let (id, info) = plain_model("grok-4.5", "Grok 4.5");
@@ -343,7 +403,9 @@ mod tests {
             workflows_available: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
-        assert!(cmd.suggest_args(&ctx, "").is_none());
+        let items = cmd.suggest_args(&ctx, "").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].insert_text, "auto");
     }
 
     #[test]
@@ -365,12 +427,14 @@ mod tests {
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         let items = cmd.suggest_args(&ctx, "").unwrap();
-        assert_eq!(items.len(), EFFORT_LEVELS.len());
+        // Legacy levels + trailing `auto`.
+        assert_eq!(items.len(), EFFORT_LEVELS.len() + 1);
         assert_eq!(items[0].insert_text, "xhigh");
         assert_eq!(items[1].insert_text, "high");
         assert_eq!(items[1].display, "high (active)");
         assert_eq!(items[2].insert_text, "medium");
         assert_eq!(items[3].insert_text, "low");
+        assert_eq!(items[4].insert_text, "auto");
         assert!(items[0].match_text.starts_with("a "));
         assert!(items[3].match_text.starts_with("d "));
     }

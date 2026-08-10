@@ -1929,11 +1929,22 @@ pub(super) fn model_changed_ext(
     model_id: &str,
     reasoning_effort: Option<&str>,
 ) -> acp::ExtNotification {
+    model_changed_ext_with_auto(session_id, model_id, reasoning_effort, false)
+}
+/// Like [`model_changed_ext`] but can mark the stamp as router-sourced
+/// (`effort_auto = true` → status shows `medium (auto)`).
+pub(super) fn model_changed_ext_with_auto(
+    session_id: &str,
+    model_id: &str,
+    reasoning_effort: Option<&str>,
+    effort_auto: bool,
+) -> acp::ExtNotification {
     let payload = SessionNotification {
         session_id: acp::SessionId::new(session_id),
         update: XaiSessionUpdate::ModelChanged {
             model_id: model_id.to_string(),
             reasoning_effort: reasoning_effort.map(String::from),
+            effort_auto,
         },
         meta: None,
     };
@@ -1950,6 +1961,7 @@ pub(super) fn model_changed_ext_with_event(
         update: XaiSessionUpdate::ModelChanged {
             model_id: model_id.to_string(),
             reasoning_effort: None,
+            effort_auto: false,
         },
         meta: Some(serde_json::json!({ "eventId": event_id })),
     };

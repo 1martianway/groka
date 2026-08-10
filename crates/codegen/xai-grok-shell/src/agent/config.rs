@@ -1458,6 +1458,10 @@ pub struct Config {
     /// `[diagnostics]` — crash handler toggle (`load_crash_handler_enabled_sync`).
     #[serde(default, skip_serializing)]
     pub diagnostics: DiagnosticsConfig,
+    /// `[effort_router]` — per-turn heuristic reasoning-effort routing.
+    /// See [`crate::agent::effort_router::EffortRouterConfig`].
+    #[serde(default, skip_serializing)]
+    pub effort_router: crate::agent::effort_router::EffortRouterConfig,
     /// Storage mode for session persistence.
     /// When running in relay/headless mode, this should be set to Writeback.
     /// Defaults to reading from GROK_STORAGE_MODE env var.
@@ -1837,6 +1841,7 @@ impl Default for Config {
             suggestions: SuggestionsConfig::default(),
             marketplace: MarketplaceConfig::default(),
             diagnostics: DiagnosticsConfig::default(),
+            effort_router: crate::agent::effort_router::EffortRouterConfig::default(),
             storage_mode: StorageMode::resolve(None, None),
             default_model_override: None,
             reasoning_effort_override: None,

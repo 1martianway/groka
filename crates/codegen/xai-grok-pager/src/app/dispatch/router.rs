@@ -946,6 +946,24 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 prev_model_id: None,
             }]
         }
+        Action::EffortAuto { model_id } => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                // No live session yet — mark auto locally; first turn routes.
+                agent.session.models.effort_auto = true;
+                return vec![];
+            };
+            vec![Effect::EffortAuto {
+                agent_id: id,
+                session_id,
+                model_id,
+            }]
+        }
         Action::AnnouncementsHide => {
             let shown_key = crate::views::announcements::first_session_announcement(
                 &app.active_announcements,

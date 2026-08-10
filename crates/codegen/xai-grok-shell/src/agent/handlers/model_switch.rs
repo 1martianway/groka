@@ -21,7 +21,13 @@ pub(crate) async fn apply(
         Some(serde_json::json!({"model": args.model_id.0.as_ref()})),
     );
     tracing::debug!("session_session_model::mvp_agent: {:?}", &args);
-    let effort_override = parse_reasoning_effort_meta(args.meta.as_ref());
+    // `/effort auto` re-enables the per-turn router (unpins). Not a ReasoningEffort.
+    let effort_auto = crate::agent::effort_router::is_effort_auto_meta(args.meta.as_ref());
+    let effort_override = if effort_auto {
+        None
+    } else {
+        parse_reasoning_effort_meta(args.meta.as_ref())
+    };
     let acp::SetSessionModelRequest {
         session_id,
         model_id,
@@ -124,7 +130,19 @@ pub(crate) async fn apply(
     }
     let mut model_sampling =
         agent.prepare_sampling_config_for_model(&model, handle.origin_client.clone());
-    if let Some(eff) = effort_override {
+    if effort_auto {
+        // Re-enable router; leave current sampling effort until next turn stamps.
+        agent.models_manager.set_effort_pinned(false);
+        agent.models_manager.set_effort_routed(false);
+        // Prefer the session's last known effort over catalog re-prepare defaults.
+        if let Some(prev) = handle.reasoning_effort {
+            model_sampling.reasoning_effort = Some(prev);
+        }
+        tracing::info!(
+            session_id = %session_id.0,
+            "set_session_model: /effort auto — router re-enabled (unpinned)"
+        );
+    } else if let Some(eff) = effort_override {
         if agent
             .models_manager
             .model_supports_reasoning_effort(model_id.0.as_ref())
@@ -135,6 +153,9 @@ pub(crate) async fn apply(
                 "set_session_model: applying reasoning_effort override from meta"
             );
             model_sampling.reasoning_effort = Some(eff);
+            // Explicit `/effort` or meta effort pin — disable per-turn router.
+            agent.models_manager.set_effort_pinned(true);
+            agent.models_manager.set_effort_routed(false);
         } else {
             tracing::warn!(
                 session_id = %session_id.0,
@@ -267,6 +288,8 @@ fn broadcast_model_changed(
         update: crate::extensions::notification::SessionUpdate::ModelChanged {
             model_id: model_id.to_owned(),
             reasoning_effort,
+            // Explicit pin / model switch — not router-sourced.
+            effort_auto: false,
         },
         meta: None,
     };

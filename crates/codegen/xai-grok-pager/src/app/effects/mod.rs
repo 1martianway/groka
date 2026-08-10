@@ -1759,6 +1759,27 @@ pub(crate) fn execute(
                     }
                 });
         }
+        Effect::EffortAuto {
+            agent_id,
+            session_id,
+            model_id,
+        } => {
+            let tx = acp_tx.clone();
+            tasks.spawn(async move {
+                use xai_grok_shell::sampling::types::REASONING_EFFORT_META_KEY;
+                let mut meta = acp::Meta::new();
+                meta.insert(
+                    REASONING_EFFORT_META_KEY.to_string(),
+                    serde_json::Value::String("auto".into()),
+                );
+                let req = acp::SetSessionModelRequest::new(session_id, model_id).meta(Some(meta));
+                let result = acp_send(req, &tx)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| sanitize_user_error(&e.to_string()));
+                TaskResult::EffortAutoComplete { agent_id, result }
+            });
+        }
         Effect::ProbeClipboardAttachment { ctx, change_count } => {
             tasks
                 .spawn(async move {

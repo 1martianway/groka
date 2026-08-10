@@ -2489,8 +2489,8 @@ impl AgentView {
         let usage_warning_text: Option<String> = warning.as_ref().map(|(t, _)| t.clone());
         let usage_warning = usage_warning_text.as_deref();
         let usage_warning_critical = warning.is_some_and(|(_, critical)| critical);
-        let model_label = match self.session.models.reasoning_effort {
-            Some(eff) => format!("{model_id} ({eff})"),
+        let model_label = match self.session.models.effort_status_label() {
+            Some(status) => format!("{model_id} ({status})"),
             None => model_id,
         };
         let info = match &self.prompt_mode {
