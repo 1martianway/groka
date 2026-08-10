@@ -768,7 +768,8 @@ fn rebuild_updates_models_and_available() {
 #[test]
 fn current_reasoning_effort_round_trip() {
     let mgr = test_manager();
-    assert_eq!(mgr.current_reasoning_effort(), None);
+    // Router-on default seeds floor (low).
+    assert_eq!(mgr.current_reasoning_effort(), Some(ReasoningEffort::Low));
 
     mgr.set_current_reasoning_effort(Some(ReasoningEffort::High));
     assert_eq!(mgr.current_reasoning_effort(), Some(ReasoningEffort::High));
@@ -778,11 +779,13 @@ fn current_reasoning_effort_round_trip() {
 }
 
 #[test]
-fn current_reasoning_effort_seeded_from_config() {
+fn current_reasoning_effort_seeded_from_config_when_router_off() {
     let tmp = std::env::temp_dir().join("grok-test-models-manager-seed");
     let auth_manager = Arc::new(AuthManager::new(&tmp, GrokComConfig::default()));
     let mut cfg = config::Config::default();
     cfg.models.default_reasoning_effort = Some(ReasoningEffort::Xhigh);
+    // With the router disabled, fall through to default_reasoning_effort.
+    cfg.effort_router.enabled = false;
     let mgr = ModelsManager::new(
         None,
         IndexMap::new(),
@@ -791,6 +794,31 @@ fn current_reasoning_effort_seeded_from_config() {
         cfg,
     );
     assert_eq!(mgr.current_reasoning_effort(), Some(ReasoningEffort::Xhigh),);
+}
+
+#[test]
+fn current_reasoning_effort_defaults_to_router_floor_auto() {
+    // Fork default: router on → seed floor (low) and mark auto so the status
+    // bar starts at `low (auto)` until the first turn routes higher.
+    let tmp = std::env::temp_dir().join("grok-test-models-manager-auto-floor");
+    let auth_manager = Arc::new(AuthManager::new(&tmp, GrokComConfig::default()));
+    let mut cfg = config::Config::default();
+    cfg.models.default_reasoning_effort = Some(ReasoningEffort::Xhigh);
+    assert!(cfg.effort_router.enabled, "fork ships router enabled");
+    let mgr = ModelsManager::new(
+        None,
+        IndexMap::new(),
+        acp::ModelId::new("default"),
+        auth_manager,
+        cfg,
+    );
+    assert!(!mgr.effort_pinned());
+    assert!(mgr.effort_routed(), "auto seed marks effort as router-sourced");
+    assert_eq!(
+        mgr.current_reasoning_effort(),
+        Some(ReasoningEffort::Low),
+        "router-on default must seed floor (low), not catalog/default high"
+    );
 }
 
 #[test]

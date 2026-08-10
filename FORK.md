@@ -23,8 +23,10 @@ floor = "low"
 ceiling = "high"
 ```
 
-**Precedence:** pin (`/effort`, `--effort`, persona) → router → `default_reasoning_effort` → catalog high.  
-`/effort auto` re-enables the router.
+**Default:** router on → status starts at **`low (auto)`**; each turn may bump to
+medium/high. Pin (`/effort`, `--effort`, persona) wins; `/effort auto` re-enables.
+
+**Precedence:** pin → router → `default_reasoning_effort` → catalog high.
 
 ## Remotes
 

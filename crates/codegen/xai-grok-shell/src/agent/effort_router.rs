@@ -19,6 +19,10 @@ pub const ROUTER_EFFORTS: [ReasoningEffort; 3] = [
     ReasoningEffort::High,
 ];
 
+/// Model-info / session meta key: when `true`, the TUI shows
+/// `low (auto)` / `medium (auto)` and the per-turn router is active.
+pub const EFFORT_AUTO_META_KEY: &str = "effortAuto";
+
 /// `[effort_router]` in config.toml.
 ///
 /// ```toml

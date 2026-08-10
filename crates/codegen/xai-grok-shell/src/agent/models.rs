@@ -271,10 +271,22 @@ impl ModelsManagerBuilder {
     pub(crate) fn build(self) -> ModelsManager {
         let has_session = self.auth_manager.current_or_expired().is_some();
         let fetch_auth = ModelFetchAuth::resolve(&self.cfg.endpoints, has_session);
-        let current_reasoning_effort = self.cfg.models.default_reasoning_effort;
         // CLI `--effort` is sticky for the process; treat as a pin so the
         // per-turn router does not clobber it.
         let effort_pinned = self.cfg.reasoning_effort_override.is_some();
+        // Seed effort for status / first-turn stamp:
+        //   pin (CLI) → override
+        //   router on (default) → floor (`low`) so the UI starts at `low (auto)`
+        //   router off → `default_reasoning_effort` / catalog
+        let current_reasoning_effort = if let Some(pin) = self.cfg.reasoning_effort_override {
+            Some(pin)
+        } else if self.cfg.effort_router.enabled {
+            Some(self.cfg.effort_router.clamped_bounds().0)
+        } else {
+            self.cfg.models.default_reasoning_effort
+        };
+        // Router-on + unpinned ⇒ auto mode until an explicit pin.
+        let effort_auto_seed = self.cfg.effort_router.enabled && !effort_pinned;
         ModelsManager {
             inner: Arc::new(Inner {
                 catalog: RwLock::new(CatalogState {
@@ -285,7 +297,8 @@ impl ModelsManagerBuilder {
                 current_model_id: RwLock::new(self.current_model_id),
                 current_reasoning_effort: RwLock::new(current_reasoning_effort),
                 effort_pinned: AtomicBool::new(effort_pinned),
-                effort_routed: AtomicBool::new(false),
+                // Mark routed so logs/status treat the floor seed as auto.
+                effort_routed: AtomicBool::new(effort_auto_seed),
                 auth_manager: self.auth_manager,
                 cfg: RwLock::new(self.cfg),
                 fetch_auth: RwLock::new(fetch_auth),
