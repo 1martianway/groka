@@ -1,7 +1,11 @@
-# Fork notes (effort router)
+# Fork notes (groka)
 
-Compact ops sheet. Full quick-start + detailed guide: **[README.md](README.md)**.  
+Compact ops sheet. Full product story + guide: **[README.md](README.md)**.  
 Upstream product README: [README.upstream.md](README.upstream.md).
+
+**Groka — Grok Build with Auto Router**
+
+Open-source fork with auto effort router, usage limit bar, and more to come. Installs as `groka` beside official `grok`.
 
 ## One-liner
 
@@ -35,12 +39,18 @@ enabled = true
 preference = 3
 floor = "low"
 ceiling = "high"
+
+[ui]
+show_limit_bar = true   # default on; /usage bar toggles
 ```
 
-**Default:** router on → status starts at **`low (auto)`**; each turn may bump to
+**Effort:** router on → status starts at **`low (auto)`**; each turn may bump to
 medium/high. Pin (`/effort`, `--effort`, persona) wins; `/effort auto` re-enables.
 
-**Precedence:** pin → router → `default_reasoning_effort` → catalog high.
+**Limit bar:** on by default on the prompt chrome; `/usage bar` / `/usage bar on|off`
+or Settings → Usage limit bar.
+
+**Precedence (effort):** pin → router → `default_reasoning_effort` → catalog high.
 
 ## Remotes
 

@@ -1,29 +1,71 @@
-# Grok Build fork — per-turn effort router (`groka`)
+# Groka — Grok Build with Auto Router
 
-Thin fork of [xai-org/grok-build](https://github.com/xai-org/grok-build) (Apache-2.0).  
-Adds a **heuristic effort router** so sessions stop always shipping **grok-4.5 high** on every turn.
+Open-source fork of [xAI’s Grok Build](https://github.com/xai-org/grok-build) with auto effort router, usage limit bar, and more to come. Installs as `groka` beside official `grok`. Full upstream TUI and agent stack — practical upgrades you feel every day in the terminal.
 
-Official `grok` stays on PATH. This tree installs beside it as **`groka`** (optional alias `kgrok`).
+| Feature | What it does |
+|--------|----------------|
+| **Auto effort router** | Picks `low` / `medium` / `high` reasoning effort **per turn** from your prompt — so trivial messages don’t burn high effort by default |
+| **Usage limit bar** | Shows your weekly/period Grok coding limit as a compact bar on the prompt chrome, so you can see allowance before you run out |
+| **More to come** | Thin, rebase-friendly fork — more session ergonomics and control on the way |
 
-**Do not open a PR against `xai-org/grok-build`.** Push only to your own remote.
+Official `grok` stays on your PATH. This tree installs **beside** it as **`groka`** (optional alias `kgrok`). Same auth, same config dir (`~/.grok`), same models — more control.
 
 Upstream product docs: [README.upstream.md](README.upstream.md) · [x.ai/cli](https://x.ai/cli)
 
+> **Not an xAI product.** Do not open PRs against `xai-org/grok-build`. Push only to your own remote (this project’s origin is the fork remote).
+
 ---
 
-## Quick use
+## Why groka?
+
+Upstream Grok Build is excellent — but two frictions show up quickly in long coding days:
+
+1. **Effort defaults high.** Sticky session defaults and personas don’t adapt per prompt. Hooks and plugins can’t set wire `reasoning_effort`. Easy turns cost like hard ones.
+2. **Limit visibility is buried.** Allowance lives in billing UIs; the prompt chrome didn’t show period usage at a glance.
+
+**groka** is a thin, maintainable fork: rebase-friendly patches on top of upstream, not a rewrite.
+
+---
+
+## Features
+
+### 1. Auto effort router
+
+Each user turn scores the prompt (length + simple / hard / coding keywords) and stamps `sampling_config.reasoning_effort` to `low` | `medium` | `high`. **No model swap** — only reasoning effort.
+
+- Default on; status shows e.g. `medium (auto)` when the router chose the level  
+- Pin anytime: `/effort low|medium|high` or `groka --effort high`  
+- Clear the pin: `/effort auto`  
+- Config: `[effort_router]` in `~/.grok/config.toml`
+
+**Precedence:** explicit pin (`/effort`, `--effort`, persona) → router → `[models].default_reasoning_effort` → catalog default (usually high).
+
+### 2. Usage limit bar
+
+A fixed-width progress bar on the **prompt chrome** (left of the model chip) shows period coding-limit usage from billing (`usage_pct` — typically weekly). Color shifts at 80% / 100%.
+
+- **Default on**  
+- Toggle: `/usage bar` · `/usage bar on` · `/usage bar off`  
+- Also under **Settings → Usage limit bar** (`[ui].show_limit_bar`)  
+- Hidden for gateway/chat sessions and when billing usage isn’t visible
+
+`/usage` / `/usage show` still opens the full usage summary; `/usage manage` opens billing (consumer accounts).
+
+---
+
+## Quick start
 
 ```sh
 # 1) Build + install (stamps git HEAD into groka --version)
-cd ~/repos/groka   # this fork
+git clone https://github.com/1martianway/groka.git
+cd groka
 ./scripts/install-groka.sh
 # → ~/.local/bin/groka
 
-# Or from Grok Build: /groka
-
-# 2) Keep the fork from self-replacing with the official channel
-#    ~/.grok/config.toml
+# Or from an existing Grok Build session: /groka
 ```
+
+Keep the fork from self-replacing with the official channel — `~/.grok/config.toml`:
 
 ```toml
 [cli]
@@ -34,21 +76,24 @@ enabled = true
 preference = 3   # 1..=5; 3 neutral, higher → more high effort
 floor = "low"
 ceiling = "high"
+
+[ui]
+# Optional — limit bar defaults on when omitted
+# show_limit_bar = true
 ```
 
 ```sh
-# 4) Run
 export PATH="$HOME/.local/bin:$PATH"
 groka
 
-# Pin when you want a fixed effort; auto re-enables the router
+# Effort
 #   /effort low | medium | high | auto
-# Status may show: medium (auto)
+
+# Limit bar
+#   /usage bar        # toggle
+#   /usage bar off    # hide
+#   /usage bar on     # show
 ```
-
-**What it does:** each user turn scores the prompt (length + simple/hard/coding keywords) and stamps `sampling_config.reasoning_effort` to `low` | `medium` | `high`. **No model swap.**
-
-**Precedence:** explicit pin (`/effort`, `--effort`, persona) → router → `[models].default_reasoning_effort` → catalog default (usually high).
 
 ---
 
@@ -60,6 +105,8 @@ Upstream Grok Build often defaults reasoning effort to **high**. Hooks, plugins,
 
 This fork adds a small turn-start router that chooses effort from the user prompt so trivial turns cost less and hard coding/debug turns still get high effort.
 
+Separately, the **usage limit bar** surfaces period allowance on every prompt so you don’t discover limits only when a request fails.
+
 ### Architecture (thin patch)
 
 | Piece | Role |
@@ -68,10 +115,12 @@ This fork adds a small turn-start router that chooses effort from the user promp
 | `turn.rs` `maybe_stamp_effort_router` | At conversation-turn start, stamp `sampling_config.reasoning_effort` when unpinned |
 | `ModelsManager` / `model_switch` | Pin flag; `/effort auto` clears pin |
 | pager `/effort` + status | UI: pin levels + `effort: medium (auto)` when routed |
+| pager `credit_bar` + prompt chrome | Weekly/period limit bar spans |
+| `[ui].show_limit_bar` + `/usage bar` | Persistable toggle (default on) |
 
 Wire path remains the normal chat sampling config (`reasoning_effort` on the request). Subagent turns skip the main-turn router stamp (persona/subagent overrides stay sticky).
 
-### Heuristics (v0 — no LLM)
+### Effort heuristics (v0 — no LLM)
 
 Base rank = medium, then:
 
@@ -103,9 +152,12 @@ enabled = true      # false → never mutates sampling effort
 preference = 3      # 1 cheap-biased … 5 expensive-biased
 floor = "low"       # min among low|medium|high
 ceiling = "high"    # max among low|medium|high
+
+[ui]
+show_limit_bar = true   # false hides the prompt chrome limit bar
 ```
 
-Section omitted → same defaults (`enabled = true`).
+Section omitted → same defaults (`enabled = true`, limit bar on).
 
 ```toml
 [models]
@@ -126,9 +178,10 @@ groka --effort low
 # or inside the TUI:
 # /effort high
 # /effort auto
+# /usage bar off
 ```
 
-### Precedence (full chain)
+### Precedence (effort, full chain)
 
 1. **Explicit pin** — `/effort low|medium|high`, `--effort`, or persona/role pin  
 2. **Router** — when enabled and not pinned  
@@ -151,22 +204,30 @@ cargo install dotslash
 ### Clone, remotes, and push policy
 
 ```sh
-git clone https://github.com/xai-org/grok-build.git ~/repos/grok-build
-cd ~/repos/grok-build
-
-# xAI = upstream only (never push here)
-git remote rename origin upstream
-
-# your private fork (create once, then:)
-# git remote add origin git@github.com:YOU/grok-build.git
+git clone https://github.com/1martianway/groka.git
+cd groka
 ```
 
-If `origin` still points at `xai-org/grok-build`, treat it as **read-only**. Never `git push origin` to that org. No PRs to xAI.
+This repo’s `origin` is the **fork**. Upstream xAI is fetch-only:
+
+```sh
+git remote -v
+# origin    → your fork (push here)
+# upstream  → xai-org/grok-build (fetch only; no_push)
+```
+
+**Never** `git push` to `xai-org/grok-build`. No PRs to xAI.
+
+Sync upstream:
+
+```sh
+./scripts/sync-upstream.sh              # fetch + merge upstream/main
+./scripts/sync-upstream.sh --dry-run    # show incoming only
+```
 
 ### Build
 
 ```sh
-cd ~/repos/grok-build   # or a linked worktree on your patch branch
 cargo build -p xai-grok-pager-bin --release
 # → target/release/xai-grok-pager
 ```
@@ -188,8 +249,7 @@ cargo check -p xai-grok-pager-bin
 # ./scripts/install-groka.sh --skip-build   # install existing release only
 ```
 
-Grok Build: `/groka` (or `/workflow groka`) runs the same script
-and checks that `groka --version` matches the short SHA.
+From Grok Build: `/groka` (or `/workflow groka`) runs the same script and checks that `groka --version` matches the short SHA.
 
 Installs to `~/.local/bin/groka` (override with `GROK_LOCAL_NAME`). Optional:
 
@@ -214,21 +274,20 @@ Re-run install after every rebuild.
 
 ```sh
 cargo test -p xai-grok-shell --lib effort_router
-# broader effort-related:
+cargo test -p xai-grok-pager --lib limit_usage
+# broader:
 cargo test -p xai-grok-shell --lib effort
 cargo test -p xai-grok-pager --lib effort
 ```
 
-Fixtures cover prompt→low/medium/high, floor/ceiling, preference bias, pin vs router, and the full precedence chain.
+Fixtures cover prompt→low/medium/high, floor/ceiling, preference bias, pin vs router, limit-bar visibility gates, and the full effort precedence chain.
 
 ### Rebase onto upstream
 
 Keep the patch thin; rebase often:
 
 ```sh
-git fetch upstream   # or: git fetch origin  if origin is still xai-org
-git checkout your-fork-branch
-git rebase upstream/main
+./scripts/sync-upstream.sh
 cargo test -p xai-grok-shell --lib effort_router
 ./scripts/install-groka.sh   # or /groka
 ```
@@ -237,21 +296,24 @@ cargo test -p xai-grok-shell --lib effort_router
 
 | Path | Role |
 |------|------|
-| This repo / worktree | Fork source + effort_router patch |
+| This repo | Fork source + effort router + limit bar |
 | `target/release/xai-grok-pager` | Release binary name (package `xai-grok-pager-bin`) |
 | `~/.local/bin/groka` | Installed fork CLI |
 | Official `grok` install | Unchanged managed binary |
-| `~/.grok/config.toml` | Shared config (`[cli]`, `[effort_router]`, models, …) |
-| `FORK.md` | Compact operational notes (same fork) |
+| `~/.grok/config.toml` | Shared config (`[cli]`, `[effort_router]`, `[ui]`, models, …) |
+| `FORK.md` | Compact operational notes |
 | `README.upstream.md` | Upstream README snapshot |
 
 ### Out of scope (v0)
 
 - LLM-based difficulty classifier  
 - Model routing / model swap  
-- Magy or other repos  
 - PR or push to `xai-org`  
+
+### Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Prefer small, rebase-friendly patches that stay easy to re-apply on upstream.
 
 ### License
 
-Apache-2.0 — see [LICENSE](LICENSE). Personal thin fork; not an xAI release.
+Apache-2.0 — see [LICENSE](LICENSE). Community fork; not an xAI release.

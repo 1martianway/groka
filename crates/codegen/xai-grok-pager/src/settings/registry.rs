@@ -512,6 +512,10 @@ pub fn current_value_for(
         "compact_mode" => Some(SettingValue::Bool(ui.compact_mode)),
         "show_timestamps" => Some(SettingValue::Bool(ui.show_timestamps.unwrap_or(true))),
         "show_timeline" => Some(SettingValue::Bool(ui.show_timeline_enabled())),
+        // Cache is the prompt-chrome source of truth (same pattern as page_flip_on_send).
+        "show_limit_bar" => Some(SettingValue::Bool(
+            crate::appearance::cache::load_show_limit_bar(),
+        )),
         // Cache is the send-path source of truth (same pattern as group_tool_verbs).
         "page_flip_on_send" => Some(SettingValue::Bool(
             crate::appearance::cache::load_page_flip_on_send(),
@@ -832,6 +836,13 @@ mod tests {
                         *default,
                         ui.show_timeline_enabled(),
                         "show_timeline default drifts from UiConfig::default()"
+                    );
+                }
+                ("show_limit_bar", SettingKind::Bool { default }) => {
+                    assert_eq!(
+                        *default,
+                        ui.show_limit_bar_enabled(),
+                        "show_limit_bar default drifts from UiConfig::default()"
                     );
                 }
                 ("page_flip_on_send", SettingKind::Bool { default }) => {

@@ -30,6 +30,9 @@ const TIMESTAMPS_DEFAULT: bool = true;
 /// [`UiConfig::SHOW_TIMELINE_DEFAULT`]; aliased here for the `Cell::new`
 /// const context and the effective-config fallback read.
 const TIMELINE_DEFAULT: bool = UiConfig::SHOW_TIMELINE_DEFAULT;
+/// Prompt chrome weekly/period limit bar: single source is
+/// [`UiConfig::SHOW_LIMIT_BAR_DEFAULT`] (on by default).
+const LIMIT_BAR_DEFAULT: bool = UiConfig::SHOW_LIMIT_BAR_DEFAULT;
 const PAGE_FLIP_ON_SEND_DEFAULT: bool = UiConfig::PAGE_FLIP_ON_SEND_DEFAULT;
 /// Combine-queued-prompts rollout flag defaults OFF (opt-in).
 const COMBINE_QUEUED_PROMPTS_DEFAULT: bool = false;
@@ -136,6 +139,34 @@ pub fn load_show_timeline() -> bool {
 pub fn set_show_timeline(enabled: bool) {
     TIMELINE_CURRENT.with(|c| c.set(enabled));
     TIMELINE_LOADED.with(|l| l.set(true));
+}
+
+// -- Prompt limit bar (weekly/period usage %) ----------------------------------
+
+thread_local! {
+    static LIMIT_BAR_CURRENT: Cell<bool> = const { Cell::new(LIMIT_BAR_DEFAULT) };
+    static LIMIT_BAR_LOADED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Cached `show_limit_bar`, seeding from `[ui]` on first call.
+pub fn load_show_limit_bar() -> bool {
+    LIMIT_BAR_LOADED.with(|loaded| {
+        if !loaded.get() {
+            LIMIT_BAR_CURRENT.with(|c| {
+                c.set(load_bool_from_effective_config(
+                    "show_limit_bar",
+                    LIMIT_BAR_DEFAULT,
+                ))
+            });
+            loaded.set(true);
+        }
+    });
+    LIMIT_BAR_CURRENT.with(|c| c.get())
+}
+
+pub fn set_show_limit_bar(enabled: bool) {
+    LIMIT_BAR_CURRENT.with(|c| c.set(enabled));
+    LIMIT_BAR_LOADED.with(|l| l.set(true));
 }
 
 // -- Page-flip on send ---------------------------------------------------------
@@ -605,6 +636,7 @@ pub fn prime(ui: &UiConfig) {
     set(ui.compact_mode);
     set_timestamps(ui.show_timestamps.unwrap_or(TIMESTAMPS_DEFAULT));
     set_show_timeline(ui.show_timeline_enabled());
+    set_show_limit_bar(ui.show_limit_bar_enabled());
     set_page_flip_on_send(ui.page_flip_on_send_enabled());
     set_combine_queued_prompts(
         ui.combine_queued_prompts
@@ -721,6 +753,7 @@ mod tests {
         assert_eq!(COMPACT_DEFAULT, ui.compact_mode);
         assert_eq!(TIMESTAMPS_DEFAULT, ui.show_timestamps.unwrap_or(true));
         assert_eq!(TIMELINE_DEFAULT, ui.show_timeline_enabled());
+        assert_eq!(LIMIT_BAR_DEFAULT, ui.show_limit_bar_enabled());
         assert_eq!(PAGE_FLIP_ON_SEND_DEFAULT, ui.page_flip_on_send_enabled());
         assert_eq!(
             COMBINE_QUEUED_PROMPTS_DEFAULT,

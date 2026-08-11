@@ -7,8 +7,9 @@ use super::setters::{
     set_confirm_before_rewind_inner, set_contextual_hint_inner, set_default_model_inner,
     set_default_selected_permission_inner, set_display_refresh_auto_cadence_inner,
     set_fork_secondary_model_inner, set_group_tool_verbs_inner, set_hunk_tracker_mode_inner,
-    set_invert_scroll_inner, set_keep_text_selection_inner, set_max_thoughts_width_inner,
-    set_multiline_mode, set_page_flip_on_send_inner, set_prompt_suggestions_inner,
+    set_invert_scroll_inner, set_keep_text_selection_inner, set_limit_bar_inner,
+    set_max_thoughts_width_inner, set_multiline_mode, set_page_flip_on_send_inner,
+    set_prompt_suggestions_inner,
     set_remember_tool_approvals_inner, set_render_mermaid_inner, set_respect_manual_folds_inner,
     set_screen_mode_inner, set_scroll_lines_inner, set_scroll_mode_inner, set_scroll_speed_inner,
     set_show_thinking_blocks_inner, set_show_tips_inner, set_simple_mode_inner, set_theme_inner,
@@ -757,6 +758,7 @@ pub(in crate::app::dispatch) fn action_for_reset(
         ("compact_mode", SettingValue::Bool(b)) => Some(Action::SetCompactMode(*b)),
         ("show_timestamps", SettingValue::Bool(b)) => Some(Action::SetTimestamps(*b)),
         ("show_timeline", SettingValue::Bool(b)) => Some(Action::SetTimeline(*b)),
+        ("show_limit_bar", SettingValue::Bool(b)) => Some(Action::SetLimitBar(*b)),
         ("page_flip_on_send", SettingValue::Bool(b)) => Some(Action::SetPageFlipOnSend(*b)),
         ("confirm_before_rewind", SettingValue::Bool(b)) => {
             Some(Action::SetConfirmBeforeRewind(*b))
@@ -956,6 +958,7 @@ pub(in crate::app::dispatch) fn apply_setting_rollback(
         ("compact_mode", SettingValue::Bool(b)) => set_compact_mode_inner(app, *b),
         ("show_timestamps", SettingValue::Bool(b)) => set_timestamps_inner(app, *b),
         ("show_timeline", SettingValue::Bool(b)) => set_timeline_inner(app, *b),
+        ("show_limit_bar", SettingValue::Bool(b)) => set_limit_bar_inner(app, *b),
         ("page_flip_on_send", SettingValue::Bool(b)) => set_page_flip_on_send_inner(app, *b),
         ("confirm_before_rewind", SettingValue::Bool(b)) => {
             set_confirm_before_rewind_inner(app, *b)

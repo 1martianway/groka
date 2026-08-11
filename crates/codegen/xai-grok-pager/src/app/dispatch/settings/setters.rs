@@ -954,6 +954,28 @@ pub(in crate::app::dispatch) fn set_timeline(app: &mut AppView, new: bool) -> Ve
     }]
 }
 
+pub(super) fn set_limit_bar_inner(app: &mut AppView, new: bool) {
+    app.current_ui.show_limit_bar = Some(new);
+    crate::appearance::cache::set_show_limit_bar(new);
+}
+
+/// SHARED: cache + `[ui].show_limit_bar` via `Effect::PersistSetting`.
+pub(in crate::app::dispatch) fn set_limit_bar(app: &mut AppView, new: bool) -> Vec<Effect> {
+    let prev = crate::appearance::cache::load_show_limit_bar();
+    if prev == new {
+        return vec![];
+    }
+    set_limit_bar_inner(app, new);
+    refresh_open_settings_modals(app);
+    tracing::info!(target: "settings", key = "show_limit_bar", value = new, "setting changed");
+    app.show_toast(&save_success_toast("Usage limit bar", new));
+    vec![Effect::PersistSetting {
+        key: "show_limit_bar",
+        value: crate::settings::SettingValue::Bool(new),
+        rollback_value: crate::settings::SettingValue::Bool(prev),
+    }]
+}
+
 pub(super) fn set_page_flip_on_send_inner(app: &mut AppView, new: bool) {
     app.current_ui.page_flip_on_send = Some(new);
     crate::appearance::cache::set_page_flip_on_send(new);

@@ -32,6 +32,7 @@ const ALL_SETTINGS_EXERCISED: &[&str] = &[
     "screen_mode",
     "show_timestamps",
     "show_timeline",
+    "show_limit_bar",
     "page_flip_on_send",
     "confirm_before_rewind",
     "combine_queued_prompts",
@@ -212,6 +213,9 @@ fn assert_set_bool_action(outcome: SettingsKeyOutcome, key: &str, expected: bool
         }
         ("show_timeline", Action::SetTimeline(b)) => {
             assert_eq!(b, expected, "SetTimeline value differs from expected")
+        }
+        ("show_limit_bar", Action::SetLimitBar(b)) => {
+            assert_eq!(b, expected, "SetLimitBar value differs from expected")
         }
         ("page_flip_on_send", Action::SetPageFlipOnSend(b)) => {
             assert_eq!(b, expected, "SetPageFlipOnSend value differs from expected")
@@ -1827,6 +1831,7 @@ fn registry_kind_membership_through_pr_14() {
             "multiline_mode",
             "prompt_suggestions",
             "respect_manual_folds",
+            "show_limit_bar",
             "show_thinking_blocks",
             "show_timeline",
             "show_timestamps",
@@ -1981,6 +1986,7 @@ fn defaults_round_trip_through_registry() {
             "screen_mode" => SettingValue::Enum("fullscreen"),
             "show_timestamps" => SettingValue::Bool(true),
             "show_timeline" => SettingValue::Bool(false),
+            "show_limit_bar" => SettingValue::Bool(true),
             "page_flip_on_send" => SettingValue::Bool(true),
             "confirm_before_rewind" => SettingValue::Bool(true),
             "combine_queued_prompts" => SettingValue::Bool(false),
@@ -2082,6 +2088,7 @@ fn settings_value_payload_matches_kind() {
             SettingsKeyOutcome::Action(Action::SetCompactMode(_))
             | SettingsKeyOutcome::Action(Action::SetTimestamps(_))
             | SettingsKeyOutcome::Action(Action::SetTimeline(_))
+            | SettingsKeyOutcome::Action(Action::SetLimitBar(_))
             | SettingsKeyOutcome::Action(Action::SetPageFlipOnSend(_))
             | SettingsKeyOutcome::Action(Action::SetConfirmBeforeRewind(_))
             | SettingsKeyOutcome::Action(Action::SetCombineQueuedPrompts(_))

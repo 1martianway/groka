@@ -23,6 +23,12 @@ pub async fn set_show_timeline(value: bool) -> Result<()> {
     update_config(|cfg| cfg.ui.show_timeline = Some(value)).await
 }
 
+/// Persist `[ui].show_limit_bar` via `update_config`. Same `Option<bool>`
+/// shape as `show_timeline` (`None` = on by default).
+pub async fn set_show_limit_bar(value: bool) -> Result<()> {
+    update_config(|cfg| cfg.ui.show_limit_bar = Some(value)).await
+}
+
 pub async fn set_page_flip_on_send(value: bool) -> Result<()> {
     update_config(|cfg| cfg.ui.page_flip_on_send = Some(value)).await
 }

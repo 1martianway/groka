@@ -323,13 +323,15 @@ pub fn limit_usage_prompt_spans(
 }
 
 /// Period-limit percent to show on the prompt bar, or `None` when billing UI
-/// is suppressed / unavailable (gateway chat, team without usage visibility).
+/// is suppressed / unavailable (gateway chat, team without usage visibility),
+/// or when the user hid the bar (`show_limit_bar = false`).
 pub fn limit_usage_pct_for_prompt(
     balance: Option<&CreditBalance>,
     usage_visible: bool,
     gateway_chat: bool,
+    show_limit_bar: bool,
 ) -> Option<f64> {
-    if gateway_chat || !usage_visible {
+    if !show_limit_bar || gateway_chat || !usage_visible {
         return None;
     }
     balance.map(|b| b.usage_pct)
@@ -889,9 +891,23 @@ mod tests {
     #[test]
     fn limit_usage_pct_for_prompt_gates_visibility() {
         let b = bal(33.0);
-        assert_eq!(limit_usage_pct_for_prompt(Some(&b), true, false), Some(33.0));
-        assert_eq!(limit_usage_pct_for_prompt(Some(&b), false, false), None);
-        assert_eq!(limit_usage_pct_for_prompt(Some(&b), true, true), None);
-        assert_eq!(limit_usage_pct_for_prompt(None, true, false), None);
+        assert_eq!(
+            limit_usage_pct_for_prompt(Some(&b), true, false, true),
+            Some(33.0)
+        );
+        assert_eq!(
+            limit_usage_pct_for_prompt(Some(&b), false, false, true),
+            None
+        );
+        assert_eq!(
+            limit_usage_pct_for_prompt(Some(&b), true, true, true),
+            None
+        );
+        assert_eq!(limit_usage_pct_for_prompt(None, true, false, true), None);
+        assert_eq!(
+            limit_usage_pct_for_prompt(Some(&b), true, false, false),
+            None,
+            "user toggle off must hide the bar even when billing is visible"
+        );
     }
 }

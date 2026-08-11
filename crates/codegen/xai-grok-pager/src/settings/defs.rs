@@ -600,6 +600,30 @@ pub fn default_settings() -> Vec<SettingMeta> {
             hidden_in_minimal: true,
         },
         SettingMeta {
+            key: "show_limit_bar",
+            category: SettingCategory::Appearance,
+            owner: SettingOwner::Shared,
+            label: "Usage limit bar",
+            description: "Show weekly/period Grok coding-limit usage as a compact bar on the prompt \
+                          chrome (left of the model name). Default on; toggle with /usage bar.",
+            keywords: &[
+                "usage",
+                "limit",
+                "bar",
+                "credits",
+                "weekly",
+                "billing",
+                "quota",
+                "allowance",
+            ],
+            kind: SettingKind::Bool {
+                // Single source: UiConfig::SHOW_LIMIT_BAR_DEFAULT (on).
+                default: ui_default.show_limit_bar_enabled(),
+            },
+            restart_required: false,
+            hidden_in_minimal: false,
+        },
+        SettingMeta {
             key: "page_flip_on_send",
             category: SettingCategory::Appearance,
             owner: SettingOwner::Shared,

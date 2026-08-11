@@ -2490,10 +2490,12 @@ impl AgentView {
         let usage_warning = usage_warning_text.as_deref();
         let usage_warning_critical = warning.is_some_and(|(_, critical)| critical);
         // Weekly/period Grok coding limit (billing usage_pct), not session context.
+        // Gated by `[ui].show_limit_bar` (default on; `/usage bar` toggles).
         let limit_usage_pct = crate::views::credit_bar::limit_usage_pct_for_prompt(
             self.credit_balance.as_ref(),
             self.billing_surface_visible,
             self.chat_kind,
+            crate::appearance::cache::load_show_limit_bar(),
         );
         let model_label = match self.session.models.effort_status_label() {
             Some(status) => format!("{model_id} ({status})"),

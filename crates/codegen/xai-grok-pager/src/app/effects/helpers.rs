@@ -1101,6 +1101,14 @@ pub(crate) async fn persist_setting(
                 .await
                 .map_err(|e| e.to_string())
         }
+        "show_limit_bar" => {
+            let SettingValue::Bool(b) = value else {
+                return Err(kind_mismatch("show_limit_bar", "Bool", &value));
+            };
+            xai_grok_shell::util::config::set_show_limit_bar(b)
+                .await
+                .map_err(|e| e.to_string())
+        }
         "simple_mode" => {
             let SettingValue::Bool(b) = value else {
                 return Err(kind_mismatch("simple_mode", "Bool", &value));

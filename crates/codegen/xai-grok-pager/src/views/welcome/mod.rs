@@ -2195,6 +2195,7 @@ fn render_welcome_done(
             p.credit_balance,
             p.usage_visible,
             false,
+            crate::appearance::cache::load_show_limit_bar(),
         );
         let usage_info = PromptInfo {
             model_name: p.model_name,
