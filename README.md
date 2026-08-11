@@ -1,6 +1,6 @@
 # Grok Build fork — per-turn effort router (`groka`)
 
-Thin personal fork of [xai-org/grok-build](https://github.com/xai-org/grok-build) (Apache-2.0).  
+Thin fork of [xai-org/grok-build](https://github.com/xai-org/grok-build) (Apache-2.0).  
 Adds a **heuristic effort router** so sessions stop always shipping **grok-4.5 high** on every turn.
 
 Official `grok` stays on PATH. This tree installs beside it as **`groka`** (optional alias `kgrok`).
