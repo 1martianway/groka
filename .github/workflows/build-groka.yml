@@ -9,7 +9,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: build-groka-${{ github.workflow }}-${{ github.ref }}
+  # push events all land on refs/heads/main, so with a plain github.ref key
+  # a burst of merges cancelled each other's post-merge CI — silently, since
+  # this repo has no branch-protection required-check gate to catch it.
+  # Keying push on the commit sha instead gives every merge its own group;
+  # pull_request behavior (and PR-time speed) is unchanged.
+  group: build-groka-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 env:
