@@ -21,7 +21,7 @@ Open-source fork with auto effort router, usage limit bar, and more to come. Ins
 
 I’m open-sourcing **groka**, a fork of xAI’s Grok Build with practical upgrades for everyday coding:
 
-1. **Auto effort router** — picks `low` / `medium` / `high` reasoning effort **per turn** from your prompt (heuristic). Trivial turns don’t burn high effort; hard debug/coding still gets high. Pin with `/effort`, or leave auto. **No model swap.**
+1. **Auto effort router** — picks `low` / `medium` / `high` reasoning effort **per turn** (stage + grok-4.6 meaning + heuristic). Trivial turns don’t burn high effort; hard debug/coding still gets high. Pin with `/effort`, or leave auto. **No model swap — grok-4.6 stays the model.**
 
 2. **Usage limit bar** — weekly/period Grok coding limit as a compact bar on the prompt chrome (left of the model chip). **Default on**; toggle with `/usage bar` or Settings.
 

@@ -39,13 +39,19 @@ enabled = true
 preference = 3
 floor = "low"
 ceiling = "high"
+mode = "hybrid"
+confidence_threshold = 50
+escalation_strikes = 2
+classifier_timeout_ms = 500
 
 [ui]
 show_limit_bar = true   # default on; /usage bar toggles
 ```
 
 **Effort:** router on → status starts at **`low (auto)`**; each turn may bump to
-medium/high. Pin (`/effort`, `--effort`, persona) wins; `/effort auto` re-enables.
+medium/high via the hybrid cascade (stage / meaning / heuristic). Pin
+(`/effort`, `--effort`, persona) wins; `/effort auto` re-enables and clears
+escalation. Model is always grok-4.6.
 
 **Limit bar:** on by default on the prompt chrome; `/usage bar` / `/usage bar on|off`
 or Settings → Usage limit bar.

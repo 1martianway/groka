@@ -4,7 +4,7 @@ Open-source fork of [xAI’s Grok Build](https://github.com/xai-org/grok-build) 
 
 | Feature | What it does |
 |--------|----------------|
-| **Auto effort router** | Picks `low` / `medium` / `high` reasoning effort **per turn** from your prompt — so trivial messages don’t burn high effort by default |
+| **Auto effort router** | Picks `low` / `medium` / `high` reasoning effort **per turn** — stage signals + meaning (grok-4.6 judge) + keyword leaf, so trivial turns stay cheap and hard ones still get high |
 | **Usage limit bar** | Shows your weekly/period Grok coding limit as a compact bar on the prompt chrome, so you can see allowance before you run out |
 | **More to come** | Thin, rebase-friendly fork — more session ergonomics and control on the way |
 
@@ -31,7 +31,7 @@ Upstream Grok Build is excellent — but two frictions show up quickly in long c
 
 ### 1. Auto effort router
 
-Each user turn scores the prompt (length + simple / hard / coding keywords) and stamps `sampling_config.reasoning_effort` to `low` | `medium` | `high`. **No model swap** — only reasoning effort.
+Each user turn picks `low` | `medium` | `high` and stamps `sampling_config.reasoning_effort`. **No model swap** — grok-4.6 stays the model; only reasoning effort changes. Default `mode = "hybrid"` is a Switchyard-style cascade (escalation → tool-result stage → obvious heuristic → grok-4.6 judge on the rest → heuristic fall-open).
 
 - Default on; status shows e.g. `medium (auto)` when the router chose the level  
 - Pin anytime: `/effort low|medium|high` or `groka --effort high`  
@@ -76,6 +76,10 @@ enabled = true
 preference = 3   # 1..=5; 3 neutral, higher → more high effort
 floor = "low"
 ceiling = "high"
+mode = "hybrid"              # heuristic | hybrid | classifier
+confidence_threshold = 50    # 0..=100; stage bar (50 ≈ 0.5)
+escalation_strikes = 2
+classifier_timeout_ms = 500
 
 [ui]
 # Optional — limit bar defaults on when omitted
@@ -103,7 +107,7 @@ groka
 
 Upstream Grok Build often defaults reasoning effort to **high**. Hooks, plugins, skills, and MCP cannot set wire effort (`UserPromptSubmit` is observe-only; hook decisions are allow/deny; `additionalContext` is text only). Personas and `[models].default_reasoning_effort` are **session-sticky**, not per-prompt.
 
-This fork adds a small turn-start router that chooses effort from the user prompt so trivial turns cost less and hard coding/debug turns still get high effort.
+This fork adds a turn-start router that chooses effort so trivial turns cost less and hard coding/debug turns still get high effort. Hybrid mode understands meaning (grok-4.6 judge, 500ms budget, fail-open) and mid-session stage (tool errors, writes, doom-loop).
 
 Separately, the **usage limit bar** surfaces period allowance on every prompt so you don’t discover limits only when a request fails.
 
@@ -111,7 +115,7 @@ Separately, the **usage limit bar** surfaces period allowance on every prompt so
 
 | Piece | Role |
 |-------|------|
-| `xai-grok-shell` `effort_router.rs` | Pure heuristics + `[effort_router]` config |
+| `xai-grok-shell` `effort_router/` | Hybrid cascade + `[effort_router]` config |
 | `turn.rs` `maybe_stamp_effort_router` | At conversation-turn start, stamp `sampling_config.reasoning_effort` when unpinned |
 | `ModelsManager` / `model_switch` | Pin flag; `/effort auto` clears pin |
 | pager `/effort` + status | UI: pin levels + `effort: medium (auto)` when routed |
@@ -120,27 +124,23 @@ Separately, the **usage limit bar** surfaces period allowance on every prompt so
 
 Wire path remains the normal chat sampling config (`reasoning_effort` on the request). Subagent turns skip the main-turn router stamp (persona/subagent overrides stay sticky).
 
-### Effort heuristics (v0 — no LLM)
+### Effort cascade (v1)
 
-Base rank = medium, then:
+Default `mode = "hybrid"`. Pin still wins. Subagents are skipped.
 
-| Signal | Effect |
-|--------|--------|
-| Very short prompt (&lt; ~40 chars) | −1 rank |
-| Long prompt (&gt; ~400 chars) | +1 rank |
-| Simple chat (`hi`, `thanks`, …) if short | −1 rank |
-| Hard keywords (debug, race, architecture, …) | +1 rank |
-| Coding keywords (implement, unit test, stack trace, …) | +1 rank |
-| `preference` 1..=5 | bias `preference − 3` (−2..=+2) |
-| `floor` / `ceiling` | clamp within low\|medium\|high |
+1. **Escalation** — two consecutive bad turns (write/shell failure or doom-loop) pin the session to high until `/effort auto`.
+2. **Stage** — last-turn tool outcomes. Errors/spin/explore → high; writes + passing shell → low. One signal stays under the 0.5 bar; two corroborating signals fire. No extra LLM.
+3. **Obvious heuristic** — `hi`/`thanks` → low; debug+implement → high. No extra LLM.
+4. **Judge** — ambiguous prompts only. grok-4.6 at low effort, structured `route_effort` tool, 500ms timeout. Fail-open to the heuristic.
+5. **Heuristic leaf** — original v0 length + keyword scorer. Also the entire router when `mode = "heuristic"`.
 
-Examples (default preference=3):
-
-| Prompt | Typical effort |
-|--------|----------------|
-| `hi` / `thanks!` | low |
-| Neutral ~100-char summary request | medium |
-| Debug race + implement + unit tests | high |
+| Prompt / situation | Typical effort | Source |
+|--------|----------------|--------|
+| `hi` / `thanks!` | low | heuristic |
+| Neutral ~100-char summary | medium | classifier or fall-open |
+| Debug race + implement + unit tests | high | heuristic |
+| Last turn: bash failed + spinning reads | high | stage / override |
+| Two bad turns in a row | high | escalation |
 
 ### Configuration
 
@@ -152,6 +152,10 @@ enabled = true      # false → never mutates sampling effort
 preference = 3      # 1 cheap-biased … 5 expensive-biased
 floor = "low"       # min among low|medium|high
 ceiling = "high"    # max among low|medium|high
+mode = "hybrid"     # heuristic | hybrid | classifier
+confidence_threshold = 50
+escalation_strikes = 2
+classifier_timeout_ms = 500
 
 [ui]
 show_limit_bar = true   # false hides the prompt chrome limit bar

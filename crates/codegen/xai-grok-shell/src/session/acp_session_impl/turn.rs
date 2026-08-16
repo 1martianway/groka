@@ -1217,6 +1217,12 @@ impl SessionActor {
             },
         );
         let doom_tally = std::mem::take(&mut *self.doom_loop_turn_tally.lock());
+        if !self.startup_hints.is_subagent {
+            let outcomes = self.signals_handle().last_turn_tool_outcomes().await;
+            let doom = doom_tally.fired();
+            let bad = crate::agent::effort_router::turn_was_bad(&outcomes, doom);
+            self.models_manager.note_router_turn_end(bad, doom);
+        }
         if doom_tally.fired() {
             xai_grok_telemetry::session_ctx::log_session_event(
                 crate::agent::session_metrics::DoomLoopRecovery {
@@ -2006,11 +2012,31 @@ impl SessionActor {
         {
             return;
         }
-        let Some(effort) =
-            crate::agent::effort_router::maybe_route_effort(&prompt, &router_cfg, pinned)
-        else {
+        let outcomes = self.signals_handle().last_turn_tool_outcomes().await;
+        let doom = self.models_manager.router_last_doom();
+        let signals = crate::agent::effort_router::collect_stage_signals(&outcomes, doom);
+        let stage = crate::agent::effort_router::score_stage(
+            &signals,
+            router_cfg.stage_threshold(),
+        );
+        let step = crate::agent::effort_router::route_cascade(
+            &prompt,
+            &router_cfg,
+            pinned,
+            self.models_manager.router_escalated(),
+            stage,
+        );
+        let Some(step) = step else {
             return;
         };
+        let decision = match step {
+            crate::agent::effort_router::CascadeStep::Done(d) => d,
+            crate::agent::effort_router::CascadeStep::NeedClassifier => {
+                let verdict = self.maybe_classify_effort(&prompt, &sc.model, &router_cfg).await;
+                crate::agent::effort_router::finish_cascade(&prompt, &router_cfg, verdict)
+            }
+        };
+        let effort = decision.effort;
         // Mark as router-sourced so status/log show `effort: medium (auto)`.
         self.models_manager.set_effort_routed(true);
         let previous = sc.reasoning_effort;
@@ -2021,6 +2047,8 @@ impl SessionActor {
                 model = %sc.model,
                 previous = ?previous,
                 routed = %effort,
+                source = decision.source.as_str(),
+                reason = %decision.reason,
                 effort_status = %status,
                 "effort_router: stamping sampling_config.reasoning_effort"
             );
@@ -2036,6 +2064,24 @@ impl SessionActor {
             reasoning_effort: Some(effort.as_str().to_string()),
             effort_auto: true,
         });
+    }
+
+    /// Fail-open judge on grok-4.6 (session model) at low effort. Never
+    /// blocks the turn past `classifier_timeout_ms`.
+    async fn maybe_classify_effort(
+        &self,
+        prompt: &str,
+        model: &str,
+        cfg: &crate::agent::effort_router::EffortRouterConfig,
+    ) -> Option<crate::agent::effort_router::ClassifierVerdict> {
+        let client = self.prepare_chat_completion(false).await.ok()?;
+        let request = crate::agent::effort_router::build_classifier_request(model, prompt, None);
+        crate::agent::effort_router::classify_with_timeout(
+            client,
+            request,
+            cfg.classifier_timeout(),
+        )
+        .await
     }
 
     #[tracing::instrument(

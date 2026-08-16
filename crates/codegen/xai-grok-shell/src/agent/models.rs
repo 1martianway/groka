@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 
 use parking_lot::RwLock;
 
@@ -133,6 +133,12 @@ struct Inner {
     /// True when the last `reasoning_effort` stamp came from the per-turn router
     /// (for status/log `effort: medium (auto)`). Cleared on explicit pin.
     effort_routed: AtomicBool,
+    /// Consecutive bad auto-routed turns. `/effort auto` resets.
+    router_strikes: AtomicU8,
+    /// One-way session escalate to high after `escalation_strikes`.
+    router_escalated: AtomicBool,
+    /// Last completed turn fired doom-loop recovery.
+    router_last_doom: AtomicBool,
     // ── Owned context for self-contained refresh ────────────────
     auth_manager: Arc<AuthManager>,
     cfg: RwLock<config::Config>,
@@ -302,6 +308,9 @@ impl ModelsManagerBuilder {
                 effort_pinned: AtomicBool::new(effort_pinned),
                 // Mark routed so logs/status treat the floor seed as auto.
                 effort_routed: AtomicBool::new(effort_auto_seed),
+                router_strikes: AtomicU8::new(0),
+                router_escalated: AtomicBool::new(false),
+                router_last_doom: AtomicBool::new(false),
                 auth_manager: self.auth_manager,
                 cfg: RwLock::new(self.cfg),
                 fetch_auth: RwLock::new(fetch_auth),
@@ -576,11 +585,48 @@ impl ModelsManager {
     }
 
     /// Pin or unpin effort. `/effort auto` should call with `false`.
-    /// Pinning clears the routed/auto status flag.
+    /// Pinning clears the routed/auto status flag. Unpinning also
+    /// clears escalation so a fresh auto session can start cheap again.
     pub(crate) fn set_effort_pinned(&self, pinned: bool) {
         self.inner.effort_pinned.store(pinned, Ordering::Release);
         if pinned {
             self.inner.effort_routed.store(false, Ordering::Release);
+        } else {
+            self.inner.router_strikes.store(0, Ordering::Release);
+            self.inner.router_escalated.store(false, Ordering::Release);
+            self.inner.router_last_doom.store(false, Ordering::Release);
+        }
+    }
+
+    pub(crate) fn router_escalated(&self) -> bool {
+        self.inner.router_escalated.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn router_last_doom(&self) -> bool {
+        self.inner.router_last_doom.load(Ordering::Acquire)
+    }
+
+    /// Fold the completed turn into the two-strike escalation door.
+    pub(crate) fn note_router_turn_end(&self, bad: bool, doom: bool) {
+        self.inner.router_last_doom.store(doom, Ordering::Release);
+        if bad {
+            let n = self
+                .inner
+                .router_strikes
+                .fetch_add(1, Ordering::AcqRel)
+                .saturating_add(1);
+            let need = self
+                .inner
+                .cfg
+                .read()
+                .effort_router
+                .escalation_strikes
+                .max(1);
+            if n >= need {
+                self.inner.router_escalated.store(true, Ordering::Release);
+            }
+        } else {
+            self.inner.router_strikes.store(0, Ordering::Release);
         }
     }
 

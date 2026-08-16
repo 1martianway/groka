@@ -1,12 +1,24 @@
-//! Per-turn heuristic effort router (v0).
+//! Per-turn effort router.
 //!
 //! When `[effort_router]` is enabled and effort is not pinned (CLI `/effort` /
-//! `--effort` / persona), score the user prompt and stamp
-//! `sampling_config.reasoning_effort` to `low` | `medium` | `high` — no model
-//! swap. Heuristics only; no LLM classifier.
+//! `--effort` / persona), choose `low` | `medium` | `high` and stamp
+//! `sampling_config.reasoning_effort`. Never swaps the model.
+//!
+//! Default `mode = "hybrid"` is a Switchyard-style cascade:
+//! escalation → stage signals → obvious heuristic → optional LLM judge
+//! → heuristic fall-open. `mode = "heuristic"` is the original v0
+//! keyword/length scorer (kept as the cheap leaf and as a config escape).
 //!
 //! Precedence (callers enforce pin):
 //! explicit pin > router > `default_reasoning_effort` > catalog high.
+
+mod classifier;
+mod stage;
+
+pub use classifier::{
+    build_classifier_request, classify_with_timeout, parse_classifier_verdict,
+};
+pub use stage::{collect_stage_signals, score_stage, turn_was_bad, StageSignals};
 
 use serde::{Deserialize, Serialize};
 use xai_grok_sampling_types::ReasoningEffort;
@@ -23,6 +35,25 @@ pub const ROUTER_EFFORTS: [ReasoningEffort; 3] = [
 /// `low (auto)` / `medium (auto)` and the per-turn router is active.
 pub const EFFORT_AUTO_META_KEY: &str = "effortAuto";
 
+/// How the router picks effort.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouterMode {
+    /// Stage + obvious heuristic + judge on remaining ambiguity.
+    #[default]
+    Hybrid,
+    /// v0 keyword/length scorer only.
+    Heuristic,
+    /// Always consult the judge (still fail-open to the heuristic).
+    Classifier,
+}
+
+impl RouterMode {
+    pub fn allows_classifier(self) -> bool {
+        matches!(self, Self::Hybrid | Self::Classifier)
+    }
+}
+
 /// `[effort_router]` in config.toml.
 ///
 /// ```toml
@@ -31,6 +62,11 @@ pub const EFFORT_AUTO_META_KEY: &str = "effortAuto";
 /// preference = 3   # 1..=5; 3 is neutral, higher biases toward high effort
 /// floor = "low"
 /// ceiling = "high"
+/// mode = "hybrid"              # heuristic | hybrid | classifier
+/// confidence_threshold = 50    # 0..=100; 50 ≈ Switchyard 0.5
+/// escalation_strikes = 2
+/// classifier_timeout_ms = 500
+/// recent_window = 3
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -45,6 +81,18 @@ pub struct EffortRouterConfig {
     /// Maximum effort the router may choose (among low|medium|high).
     #[serde(default = "default_ceiling")]
     pub ceiling: ReasoningEffort,
+    #[serde(default)]
+    pub mode: RouterMode,
+    /// 0..=100; 50 means 0.5. Stage confidence must meet this to fire.
+    #[serde(default = "default_confidence_threshold")]
+    pub confidence_threshold: u8,
+    /// Consecutive bad turns before the session is pinned high.
+    #[serde(default = "default_escalation_strikes")]
+    pub escalation_strikes: u8,
+    #[serde(default = "default_classifier_timeout_ms")]
+    pub classifier_timeout_ms: u16,
+    #[serde(default = "default_recent_window")]
+    pub recent_window: u8,
 }
 
 fn default_floor() -> ReasoningEffort {
@@ -55,6 +103,22 @@ fn default_ceiling() -> ReasoningEffort {
     ReasoningEffort::High
 }
 
+fn default_confidence_threshold() -> u8 {
+    50
+}
+
+fn default_escalation_strikes() -> u8 {
+    2
+}
+
+fn default_classifier_timeout_ms() -> u16 {
+    500
+}
+
+fn default_recent_window() -> u8 {
+    3
+}
+
 impl Default for EffortRouterConfig {
     fn default() -> Self {
         Self {
@@ -63,6 +127,11 @@ impl Default for EffortRouterConfig {
             preference: 3,
             floor: ReasoningEffort::Low,
             ceiling: ReasoningEffort::High,
+            mode: RouterMode::Hybrid,
+            confidence_threshold: default_confidence_threshold(),
+            escalation_strikes: default_escalation_strikes(),
+            classifier_timeout_ms: default_classifier_timeout_ms(),
+            recent_window: default_recent_window(),
         }
     }
 }
@@ -78,6 +147,193 @@ impl EffortRouterConfig {
             (ceiling, floor)
         }
     }
+
+    /// Stage confidence bar in `[0, 1]`.
+    pub fn stage_threshold(&self) -> f32 {
+        (self.confidence_threshold.min(100) as f32) / 100.0
+    }
+
+    pub fn classifier_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.classifier_timeout_ms as u64)
+    }
+}
+
+/// Why the router picked this effort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DecisionSource {
+    Escalation,
+    Override,
+    TestsPassed,
+    Stage,
+    Heuristic,
+    Classifier,
+    FallOpen,
+}
+
+impl DecisionSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Escalation => "escalation",
+            Self::Override => "override",
+            Self::TestsPassed => "tests_passed",
+            Self::Stage => "stage",
+            Self::Heuristic => "heuristic",
+            Self::Classifier => "classifier",
+            Self::FallOpen => "fall_open",
+        }
+    }
+}
+
+/// Stage scorer output.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StageVerdict {
+    pub effort: ReasoningEffort,
+    pub confidence: f32,
+    pub source: DecisionSource,
+}
+
+/// Judge output.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClassifierVerdict {
+    pub effort: ReasoningEffort,
+    pub confidence: f32,
+    pub reason: String,
+}
+
+/// Final routing decision.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RouteDecision {
+    pub effort: ReasoningEffort,
+    pub source: DecisionSource,
+    pub confidence: f32,
+    pub reason: String,
+}
+
+impl RouteDecision {
+    fn new(
+        effort: ReasoningEffort,
+        source: DecisionSource,
+        confidence: f32,
+        reason: impl Into<String>,
+        cfg: &EffortRouterConfig,
+    ) -> Self {
+        let (floor, ceiling) = cfg.clamped_bounds();
+        let rank = effort_rank(effort) as i8;
+        Self {
+            effort: clamp_rank_to_bounds(rank, floor, ceiling),
+            source,
+            confidence,
+            reason: reason.into(),
+        }
+    }
+}
+
+/// What [`route_cascade`] still needs from the caller.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CascadeStep {
+    Done(RouteDecision),
+    /// Hybrid/classifier mode, prompt is ambiguous — run the judge.
+    NeedClassifier,
+}
+
+/// Obvious-enough heuristic: greeting-short → low, hard+coding → high.
+pub fn heuristic_is_obvious(prompt: &str) -> Option<ReasoningEffort> {
+    let trimmed = prompt.trim();
+    let char_len = trimmed.chars().count();
+    let lower = trimmed.to_ascii_lowercase();
+    if has_simple_signal(&lower, char_len) && char_len < 40 {
+        return Some(ReasoningEffort::Low);
+    }
+    if has_hard_signal(&lower) && has_coding_signal(&lower) {
+        return Some(ReasoningEffort::High);
+    }
+    None
+}
+
+/// Sync half of the cascade. Callers that get [`CascadeStep::NeedClassifier`]
+/// run the judge and finish with [`finish_cascade`].
+pub fn route_cascade(
+    prompt: &str,
+    cfg: &EffortRouterConfig,
+    pinned: bool,
+    escalated: bool,
+    stage: Option<StageVerdict>,
+) -> Option<CascadeStep> {
+    if !cfg.enabled || pinned {
+        return None;
+    }
+    if escalated {
+        return Some(CascadeStep::Done(RouteDecision::new(
+            ReasoningEffort::High,
+            DecisionSource::Escalation,
+            1.0,
+            "session escalated after repeated bad turns",
+            cfg,
+        )));
+    }
+    if cfg.mode != RouterMode::Classifier
+        && let Some(stage) = stage
+    {
+        return Some(CascadeStep::Done(RouteDecision::new(
+            stage.effort,
+            stage.source,
+            stage.confidence,
+            format!("stage {}", stage.source.as_str()),
+            cfg,
+        )));
+    }
+    if cfg.mode == RouterMode::Heuristic {
+        return Some(CascadeStep::Done(heuristic_decision(prompt, cfg, DecisionSource::Heuristic)));
+    }
+    if cfg.mode == RouterMode::Hybrid
+        && let Some(effort) = heuristic_is_obvious(prompt)
+    {
+        return Some(CascadeStep::Done(RouteDecision::new(
+            effort,
+            DecisionSource::Heuristic,
+            0.8,
+            "obvious heuristic",
+            cfg,
+        )));
+    }
+    if cfg.mode.allows_classifier() {
+        return Some(CascadeStep::NeedClassifier);
+    }
+    Some(CascadeStep::Done(heuristic_decision(
+        prompt,
+        cfg,
+        DecisionSource::FallOpen,
+    )))
+}
+
+/// Apply a judge verdict, or fall open to the heuristic.
+pub fn finish_cascade(
+    prompt: &str,
+    cfg: &EffortRouterConfig,
+    verdict: Option<ClassifierVerdict>,
+) -> RouteDecision {
+    if let Some(v) = verdict {
+        return RouteDecision::new(
+            v.effort,
+            DecisionSource::Classifier,
+            v.confidence,
+            if v.reason.is_empty() {
+                "classifier".to_string()
+            } else {
+                v.reason
+            },
+            cfg,
+        );
+    }
+    heuristic_decision(prompt, cfg, DecisionSource::FallOpen)
+}
+
+fn heuristic_decision(
+    prompt: &str,
+    cfg: &EffortRouterConfig,
+    source: DecisionSource,
+) -> RouteDecision {
+    RouteDecision::new(route_effort(prompt, cfg), source, 0.4, source.as_str(), cfg)
 }
 
 /// Map a free-form effort into the router triad (low|medium|high).
@@ -303,6 +559,7 @@ mod tests {
             preference,
             floor,
             ceiling,
+            ..EffortRouterConfig::default()
         }
     }
 
@@ -328,6 +585,9 @@ mod tests {
         assert_eq!(c.preference, 3);
         assert_eq!(c.floor, ReasoningEffort::Low);
         assert_eq!(c.ceiling, ReasoningEffort::High);
+        assert_eq!(c.mode, RouterMode::Hybrid);
+        assert_eq!(c.confidence_threshold, 50);
+        assert_eq!(c.escalation_strikes, 2);
     }
 
     #[test]
@@ -534,5 +794,107 @@ ceiling = "high"
         );
         assert!(!is_effort_auto_meta(Some(&m)));
         assert!(!is_effort_auto_meta(None));
+    }
+
+    #[test]
+    fn cascade_pin_and_disabled_return_none() {
+        let mut c = EffortRouterConfig::default();
+        assert!(route_cascade("hi", &c, true, false, None).is_none());
+        c.enabled = false;
+        assert!(route_cascade("hi", &c, false, false, None).is_none());
+    }
+
+    #[test]
+    fn cascade_escalated_ignores_hi() {
+        let c = EffortRouterConfig::default();
+        match route_cascade("hi", &c, false, true, None) {
+            Some(CascadeStep::Done(d)) => {
+                assert_eq!(d.effort, ReasoningEffort::High);
+                assert_eq!(d.source, DecisionSource::Escalation);
+            }
+            other => panic!("expected escalation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cascade_hybrid_obvious_skips_classifier() {
+        let c = EffortRouterConfig::default();
+        match route_cascade("hi", &c, false, false, None) {
+            Some(CascadeStep::Done(d)) => {
+                assert_eq!(d.effort, ReasoningEffort::Low);
+                assert_eq!(d.source, DecisionSource::Heuristic);
+            }
+            other => panic!("expected obvious heuristic, got {other:?}"),
+        }
+        let hard = "Debug this race condition and implement a fix with unit tests.";
+        match route_cascade(hard, &c, false, false, None) {
+            Some(CascadeStep::Done(d)) => {
+                assert_eq!(d.effort, ReasoningEffort::High);
+                assert_eq!(d.source, DecisionSource::Heuristic);
+            }
+            other => panic!("expected obvious high, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cascade_ambiguous_asks_for_classifier() {
+        let c = EffortRouterConfig::default();
+        let prompt = "Can you take a look at this and tell me what you think?";
+        match route_cascade(prompt, &c, false, false, None) {
+            Some(CascadeStep::NeedClassifier) => {}
+            other => panic!("expected NeedClassifier, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cascade_heuristic_mode_never_asks_classifier() {
+        let mut c = EffortRouterConfig::default();
+        c.mode = RouterMode::Heuristic;
+        let prompt = "Can you take a look at this and tell me what you think?";
+        match route_cascade(prompt, &c, false, false, None) {
+            Some(CascadeStep::Done(d)) => {
+                assert_eq!(d.source, DecisionSource::Heuristic);
+            }
+            other => panic!("expected heuristic Done, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn finish_cascade_timeout_falls_open() {
+        let c = EffortRouterConfig::default();
+        let d = finish_cascade("Summarize the last week's weather in two sentences please.", &c, None);
+        assert_eq!(d.source, DecisionSource::FallOpen);
+        assert_eq!(d.effort, route_effort("Summarize the last week's weather in two sentences please.", &c));
+    }
+
+    #[test]
+    fn finish_cascade_uses_verdict() {
+        let c = EffortRouterConfig::default();
+        let d = finish_cascade(
+            "anything",
+            &c,
+            Some(ClassifierVerdict {
+                effort: ReasoningEffort::High,
+                confidence: 0.91,
+                reason: "underspecified architecture".into(),
+            }),
+        );
+        assert_eq!(d.source, DecisionSource::Classifier);
+        assert_eq!(d.effort, ReasoningEffort::High);
+        assert_eq!(d.reason, "underspecified architecture");
+    }
+
+    #[test]
+    fn old_toml_without_new_keys_still_deserializes() {
+        let raw = r#"
+            enabled = true
+            preference = 3
+            floor = "low"
+            ceiling = "high"
+        "#;
+        let c: EffortRouterConfig = toml::from_str(raw).unwrap();
+        assert_eq!(c.mode, RouterMode::Hybrid);
+        assert_eq!(c.confidence_threshold, 50);
+        assert_eq!(c.escalation_strikes, 2);
     }
 }
