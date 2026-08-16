@@ -2,17 +2,19 @@
 //! enforces the `allowed_models` gate before delegating here; internal callers
 //! (`new_session`, `load_session`) call `apply` directly.
 use crate::agent::config;
+use crate::agent::mvp_agent::reasoning_effort::EffortTarget;
 use crate::agent::mvp_agent::{
     MvpAgent, agent_name_after_model_switch, harnesses_are_compatible, resolve_required_agent_type,
 };
 use crate::session::SessionCommand;
 use agent_client_protocol::{self as acp};
 use tokio::sync::oneshot;
-use xai_grok_sampling_types::parse_reasoning_effort_meta;
+use xai_grok_sampling_types::ReasoningEffort;
 /// Apply a model switch to a session (no gate — `set_session_model` gates first).
 pub(crate) async fn apply(
     agent: &MvpAgent,
     args: acp::SetSessionModelRequest,
+    effort_override: Option<ReasoningEffort>,
 ) -> Result<acp::SetSessionModelResponse, acp::Error> {
     tracing::info!("Received set session model request {args:?}");
     xai_grok_telemetry::unified_log::info(
@@ -22,12 +24,11 @@ pub(crate) async fn apply(
     );
     tracing::debug!("session_session_model::mvp_agent: {:?}", &args);
     // `/effort auto` re-enables the per-turn router (unpins). Not a ReasoningEffort.
+    // Caller already parsed `_meta.reasoningEffort`; "auto" is not a level so
+    // `effort_override` is None — we still have to distinguish it from a
+    // regular model switch that also carries no effort.
     let effort_auto = crate::agent::effort_router::is_effort_auto_meta(args.meta.as_ref());
-    let effort_override = if effort_auto {
-        None
-    } else {
-        parse_reasoning_effort_meta(args.meta.as_ref())
-    };
+    let effort_override = if effort_auto { None } else { effort_override };
     let acp::SetSessionModelRequest {
         session_id,
         model_id,
@@ -134,7 +135,6 @@ pub(crate) async fn apply(
         // Re-enable router; leave current sampling effort until next turn stamps.
         agent.models_manager.set_effort_pinned(false);
         agent.models_manager.set_effort_routed(false);
-        // Prefer the session's last known effort over catalog re-prepare defaults.
         if let Some(prev) = handle.reasoning_effort {
             model_sampling.reasoning_effort = Some(prev);
         }
@@ -142,27 +142,20 @@ pub(crate) async fn apply(
             session_id = %session_id.0,
             "set_session_model: /effort auto — router re-enabled (unpinned)"
         );
-    } else if let Some(eff) = effort_override {
-        if agent
-            .models_manager
-            .model_supports_reasoning_effort(model_id.0.as_ref())
+    } else {
+        agent.models_manager.apply_supported_effort(
+            &mut model_sampling,
+            effort_override,
+            &session_id,
+            EffortTarget::ModelSwitch,
+        );
+        if effort_override.is_some()
+            && agent
+                .models_manager
+                .model_supports_reasoning_effort(model_id.0.as_ref())
         {
-            tracing::info!(
-                session_id = %session_id.0,
-                effort = %eff,
-                "set_session_model: applying reasoning_effort override from meta"
-            );
-            model_sampling.reasoning_effort = Some(eff);
-            // Explicit `/effort` or meta effort pin — disable per-turn router.
             agent.models_manager.set_effort_pinned(true);
             agent.models_manager.set_effort_routed(false);
-        } else {
-            tracing::warn!(
-                session_id = %session_id.0,
-                model_id = %model_id.0,
-                effort = %eff,
-                "set_session_model: ignoring reasoning_effort override — model does not support it"
-            );
         }
     }
     let applied_effort = model_sampling.reasoning_effort;
@@ -249,6 +242,7 @@ pub(crate) async fn apply(
         &session_id,
         model_id.0.as_ref(),
         applied_effort.map(|eff| eff.to_string()),
+        effort_auto,
     );
     xai_grok_telemetry::session_ctx::log_event(xai_grok_telemetry::events::ModelSwitched {
         session_id: session_id.0.to_string(),
@@ -282,14 +276,15 @@ fn broadcast_model_changed(
     session_id: &acp::SessionId,
     model_id: &str,
     reasoning_effort: Option<String>,
+    effort_auto: bool,
 ) {
     let notification = crate::extensions::notification::SessionNotification {
         session_id: session_id.clone(),
         update: crate::extensions::notification::SessionUpdate::ModelChanged {
             model_id: model_id.to_owned(),
             reasoning_effort,
-            // Explicit pin / model switch — not router-sourced.
-            effort_auto: false,
+            // `/effort auto` re-enables the router; explicit pins stay false.
+            effort_auto,
         },
         meta: None,
     };

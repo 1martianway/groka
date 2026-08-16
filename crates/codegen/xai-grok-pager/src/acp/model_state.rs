@@ -77,7 +77,7 @@ impl ModelState {
         }
     }
 
-    /// Machine-readable model ID string for the current model (e.g. "grok-4.5").
+    /// Machine-readable model ID string for the current model (e.g. "grok-4.6").
     pub fn current_model_id_str(&self) -> Option<&str> {
         Some(self.current.as_ref()?.0.as_ref())
     }
@@ -139,31 +139,10 @@ impl ModelState {
         self.context_window_override = Some(tokens);
     }
 
-    /// Replace the available models, preserving current selection if still valid.
-    pub fn update_catalog(
-        &mut self,
-        new_available: IndexMap<acp::ModelId, acp::ModelInfo>,
-        fallback_current: Option<acp::ModelId>,
-    ) {
-        let previous_current_model = self.current.clone();
+    /// Replace the available-model list. Leaves `current` and
+    /// `reasoning_effort` alone — those change only via `/model` / create / load.
+    pub fn update_catalog(&mut self, new_available: IndexMap<acp::ModelId, acp::ModelInfo>) {
         self.available = new_available;
-        if let Some(ref id) = self.current {
-            if !self.available.contains_key(id) {
-                self.current = fallback_current;
-            }
-        } else {
-            self.current = fallback_current;
-        }
-        // The models/update broadcast carries each model's static default effort,
-        // not this session's choice; only re-derive when the model changed so a
-        // catalog refresh can't clobber a user-set effort.
-        if self.current != previous_current_model {
-            self.reasoning_effort = self
-                .current
-                .as_ref()
-                .and_then(|id| self.available.get(id))
-                .and_then(|info| parse_reasoning_effort_meta(info.meta.as_ref()));
-        }
     }
 
     /// Set the current model and resolve reasoning effort from catalog meta.
@@ -243,7 +222,7 @@ impl ModelState {
     /// Map a typed/selected effort token to its canonical value for the current
     /// model. Accepts a menu option id (case-insensitive) or a canonical level
     /// that appears as a **value** in that model's menu. Levels the model does
-    /// not offer (e.g. `none` on grok-4.5) are rejected so we fail in the TUI
+    /// not offer (e.g. `none` on grok-4.6) are rejected so we fail in the TUI
     /// instead of sending a blocked effort to the API.
     pub fn resolve_effort_token(&self, token: &str) -> Option<ReasoningEffort> {
         match self.current.as_ref() {
@@ -438,8 +417,8 @@ mod tests {
 
     #[test]
     fn from_session_model_state_reads_effort_auto_meta() {
-        let id = acp::ModelId::new(Arc::from("grok-4.5"));
-        let info = acp::ModelInfo::new(id.clone(), "Grok 4.5".to_string()).meta(
+        let id = acp::ModelId::new(Arc::from("grok-4.6"));
+        let info = acp::ModelInfo::new(id.clone(), "Grok 4.6".to_string()).meta(
             serde_json::json!({
                 "supportsReasoningEffort": true,
                 "reasoningEffort": "low",
@@ -463,11 +442,11 @@ mod tests {
 
     #[test]
     fn apply_routed_effort_keeps_auto_and_updates_level() {
-        let id = acp::ModelId::new(Arc::from("grok-4.5"));
+        let id = acp::ModelId::new(Arc::from("grok-4.6"));
         let mut state = ModelState::default();
         state.available.insert(
             id.clone(),
-            model_with_effort("grok-4.5", "Grok 4.5", "high"),
+            model_with_effort("grok-4.6", "Grok 4.6", "high"),
         );
         state.set_current(id.clone(), Some(ReasoningEffort::High));
         assert!(!state.effort_auto);
@@ -496,49 +475,32 @@ mod tests {
     }
 
     #[test]
-    fn update_catalog_preserves_user_effort_when_model_unchanged() {
-        let id = acp::ModelId::new(Arc::from("grok-build"));
+    fn update_catalog_does_not_clobber_session_current_or_effort() {
+        let id = acp::ModelId::new(Arc::from("grok-4.6"));
         let mut state = ModelState::default();
         state.available.insert(
             id.clone(),
-            model_with_effort("grok-build", "Grok Build", "high"),
+            model_with_effort("grok-4.6", "Grok 4.6", "high"),
         );
         state.set_current(id.clone(), Some(ReasoningEffort::Xhigh));
         assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Xhigh));
 
-        // The broadcast carries the model's static default (high) for the same model.
+        // Catalog refresh replaces the list only — current + effort stay put,
+        // even if the current model is absent from the new catalog.
         let mut refreshed = IndexMap::new();
         refreshed.insert(
-            id.clone(),
-            model_with_effort("grok-build", "Grok Build", "high"),
+            acp::ModelId::new(Arc::from("other")),
+            model_with_effort("other", "Other", "low"),
         );
-        state.update_catalog(refreshed, Some(id.clone()));
+        state.update_catalog(refreshed);
 
+        assert_eq!(state.current, Some(id));
         assert_eq!(
             state.reasoning_effort,
             Some(ReasoningEffort::Xhigh),
             "catalog refresh must not clobber a user-set per-session effort"
         );
-    }
-
-    #[test]
-    fn update_catalog_rederives_effort_when_current_model_changes() {
-        let id_a = acp::ModelId::new(Arc::from("model-a"));
-        let mut state = ModelState::default();
-        state.available.insert(
-            id_a.clone(),
-            model_with_effort("model-a", "Model A", "high"),
-        );
-        state.set_current(id_a.clone(), Some(ReasoningEffort::Xhigh));
-
-        // Refresh drops model-a; fall back to model-b whose default is low.
-        let id_b = acp::ModelId::new(Arc::from("model-b"));
-        let mut refreshed = IndexMap::new();
-        refreshed.insert(id_b.clone(), model_with_effort("model-b", "Model B", "low"));
-        state.update_catalog(refreshed, Some(id_b.clone()));
-
-        assert_eq!(state.current, Some(id_b));
-        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Low));
+        assert!(!state.effort_auto);
     }
 
     fn state_with_meta(meta: Option<serde_json::Value>) -> ModelState {
