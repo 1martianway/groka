@@ -26,7 +26,10 @@ Runs `./scripts/install-groka.sh` and requires `groka --version` to contain the
 current short `git HEAD`. Optional: `/workflow groka` with
 `{"skip_build": true}` to copy an existing release only.
 
-CI (optional artifacts): `.github/workflows/build-groka.yml` on `main` / PRs.
+No CI builds: groka is built locally with `cargo build --release` (or the
+skills above). GitHub Actions ran a macOS leg on every push, which bills at
+10x and spent a third of the org's monthly allowance on artifacts nobody
+downloaded, so the workflow was removed.
 
 ## Config
 
