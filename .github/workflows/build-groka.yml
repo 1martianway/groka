@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Weekly macOS canary. Ordinary pushes build Linux only (see the matrix
+    # below), so this is what still catches macOS-specific breakage — within
+    # a week rather than within a push, which is the trade being made.
+    - cron: '0 6 * * 1'
 
 concurrency:
   # push events all land on refs/heads/main, so with a plain github.ref key
@@ -28,14 +33,17 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      # macOS only when asked for, or on the weekly canary.
+      #
+      # GitHub bills macOS minutes at 10x. This job's macOS leg is a 13-40
+      # minute Rust build, so each push cost 130-400 minutes of the 3000-minute
+      # monthly allowance — eight pushes in August consumed 1,332 of it, and
+      # together with toowl's release builds that is what exhausted the org's
+      # minutes on 2026-08-17. Linux still runs on every push and PR at 1x, so
+      # nothing stops being compiled; what stops is compiling it twice on the
+      # expensive runner for a binary nobody downloaded.
       matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact: groka-linux-x86_64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact: groka-macos-aarch64
+        include: ${{ fromJSON((github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && '[{"os":"ubuntu-latest","target":"x86_64-unknown-linux-gnu","artifact":"groka-linux-x86_64"},{"os":"macos-latest","target":"aarch64-apple-darwin","artifact":"groka-macos-aarch64"}]' || '[{"os":"ubuntu-latest","target":"x86_64-unknown-linux-gnu","artifact":"groka-linux-x86_64"}]') }}
 
     steps:
       - name: Checkout
