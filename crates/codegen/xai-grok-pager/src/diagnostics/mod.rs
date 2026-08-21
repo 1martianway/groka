@@ -804,14 +804,24 @@ pub fn diagnose_clipboard_from_values(
 /// write completes, so alt-tabbing mid-copy loses the copy. When `wl-copy` is
 /// also missing, the fix suggests installing wl-clipboard — a partial
 /// mitigation (its verified write is the most reliable non-data-control
-/// route). No warning when data-control is present (copies are focus-free) or
-/// off Wayland.
+/// route). No warning when data-control is present (copies are focus-free),
+/// off Wayland, or when an OSC 52 leg is active — that route is served by the
+/// terminal process itself, so it never depended on helper-process focus.
 pub fn diagnose_wayland_data_control(
     is_wayland: bool,
     data_control: bool,
     wl_copy_available: bool,
+    osc52_route: bool,
 ) -> Option<TerminalWarning> {
     if !is_wayland || data_control {
+        return None;
+    }
+    // An OSC 52 leg hands the write to the terminal itself, which is a
+    // long-lived client that already holds the seat — nothing like the
+    // short-lived `wl-copy` helper this warning describes, which must keep
+    // focus until it exits. With that leg active the copy survives an
+    // alt-tab, so warning about focus would be a false positive.
+    if osc52_route {
         return None;
     }
     let fix = (!wl_copy_available).then_some("sudo apt install wl-clipboard");
@@ -829,6 +839,9 @@ pub fn diagnose_wayland_data_control(
     Some(warning)
 }
 
+/// Startup path. `ProbeSnapshot` carries no clipboard facts, and here the
+/// process-global route *is* the live one this session will use, so reading
+/// it is correct rather than a shortcut.
 pub fn diagnose_wayland_data_control_from_snapshot(
     snapshot: &probes::ProbeSnapshot<'_>,
 ) -> Option<TerminalWarning> {
@@ -839,11 +852,17 @@ pub fn diagnose_wayland_data_control_from_snapshot(
             probes::TmuxProbeResult::Available(true)
         ),
         snapshot.wayland.wl_copy_available,
+        crate::clipboard::clipboard_route().osc52,
     )
 }
 
+/// `osc52_route` is passed in rather than read from the process-global
+/// `clipboard_route()` because this path serves `/doctor`, whose snapshot
+/// carries its own probed route — reading the global here would report on
+/// a different clipboard configuration than the rest of the report.
 pub(crate) fn diagnose_wayland_data_control_from_common(
     snapshot: &probes::CommonProbeSnapshot<'_>,
+    osc52_route: bool,
 ) -> Option<TerminalWarning> {
     let probes::TmuxProbeResult::Available(data_control) = snapshot.wayland.data_control else {
         return None;
@@ -852,6 +871,7 @@ pub(crate) fn diagnose_wayland_data_control_from_common(
         snapshot.wayland.is_wayland,
         data_control,
         snapshot.wayland.wl_copy_available,
+        osc52_route,
     )
 }
 
@@ -1517,12 +1537,32 @@ mod tests {
     }
 
     // =====================================================================
+    /// When the terminal applies OSC 52 writes, the copy is owned by the
+    /// long-lived, focused terminal rather than by a short-lived `wl-copy`
+    /// helper that must hold the seat until it exits. The focus caveat the
+    /// warning describes simply does not apply to that route, so warning
+    /// about it is a false positive.
+    #[test]
+    fn wayland_data_control_is_not_warned_when_osc52_carries_the_copy() {
+        assert!(
+            diagnose_wayland_data_control(true, false, true, true).is_none(),
+            "OSC 52 route makes the focus-dependent native route moot"
+        );
+    }
+
+    /// The warning must survive for terminals that have no OSC 52 route —
+    /// that is the case it was written for.
+    #[test]
+    fn wayland_data_control_still_warns_without_an_osc52_route() {
+        assert!(diagnose_wayland_data_control(true, false, true, false).is_some());
+    }
+
     // diagnose_wayland_data_control: pure Wayland clipboard logic
     // =====================================================================
 
     #[test]
     fn wayland_no_data_control_warns() {
-        let w = diagnose_wayland_data_control(true, false, true).expect("must warn");
+        let w = diagnose_wayland_data_control(true, false, true, false).expect("must warn");
         assert_eq!(w.category, WarningCategory::WaylandNoDataControl);
         assert!(w.message.contains("switch away"));
         assert!(w.fix.is_none(), "wl-copy present: nothing to install");
@@ -1530,7 +1570,7 @@ mod tests {
 
     #[test]
     fn wayland_no_data_control_missing_wl_copy_suggests_install() {
-        let w = diagnose_wayland_data_control(true, false, false).expect("must warn");
+        let w = diagnose_wayland_data_control(true, false, false, false).expect("must warn");
         assert_eq!(w.category, WarningCategory::WaylandNoDataControl);
         assert!(
             w.fix.as_deref().is_some_and(|f| f.contains("wl-clipboard")),
@@ -1541,14 +1581,14 @@ mod tests {
 
     #[test]
     fn wayland_with_data_control_is_quiet() {
-        assert!(diagnose_wayland_data_control(true, true, true).is_none());
-        assert!(diagnose_wayland_data_control(true, true, false).is_none());
+        assert!(diagnose_wayland_data_control(true, true, true, false).is_none());
+        assert!(diagnose_wayland_data_control(true, true, false, false).is_none());
     }
 
     #[test]
     fn non_wayland_is_quiet() {
-        assert!(diagnose_wayland_data_control(false, false, false).is_none());
-        assert!(diagnose_wayland_data_control(false, true, true).is_none());
+        assert!(diagnose_wayland_data_control(false, false, false, false).is_none());
+        assert!(diagnose_wayland_data_control(false, true, true, false).is_none());
     }
 
     // =====================================================================
@@ -2096,7 +2136,7 @@ mod tests {
     fn wayland_banner_surfaces_without_ssh_gate() {
         // `summarize_warnings` is SSH-gated, so the Wayland warning reaches the
         // welcome banner through the assemble bypass instead.
-        let w = diagnose_wayland_data_control(true, false, true).unwrap();
+        let w = diagnose_wayland_data_control(true, false, true, false).unwrap();
         let out = assemble_startup_warnings(None, Some(&w), None, vec![clipboard_banner()]);
         assert_eq!(out.len(), 2);
         assert!(
@@ -2110,7 +2150,7 @@ mod tests {
     #[test]
     fn wezterm_banner_outranks_wayland_banner() {
         let wez = wezterm_kitty_keyboard_warning(&wezterm_ctx(), false, None).unwrap();
-        let way = diagnose_wayland_data_control(true, false, true).unwrap();
+        let way = diagnose_wayland_data_control(true, false, true, false).unwrap();
         let out = assemble_startup_warnings(Some(&wez), Some(&way), None, vec![clipboard_banner()]);
         assert_eq!(out.len(), 3);
         assert!(out[0].message.contains("WezTerm"));
@@ -2141,7 +2181,7 @@ mod tests {
     #[test]
     fn actionable_startup_banners_keep_severity_order_and_share_doctor_cta() {
         let wezterm = wezterm_kitty_keyboard_warning(&wezterm_ctx(), false, None).unwrap();
-        let wayland = diagnose_wayland_data_control(true, false, true).unwrap();
+        let wayland = diagnose_wayland_data_control(true, false, true, false).unwrap();
         let sandbox = sandbox_profile_conflict_warning_from(vec!["dev".to_string()]).unwrap();
         let out = assemble_startup_warnings(
             Some(&wezterm),
@@ -2560,7 +2600,7 @@ mod tests {
         };
         let mut warnings = collect_startup_warnings_from(&terminal, &tmux, Some(false));
         warnings.push(wezterm_kitty_keyboard_warning_from(&wezterm_ctx(), false, None).unwrap());
-        warnings.push(diagnose_wayland_data_control(true, false, false).unwrap());
+        warnings.push(diagnose_wayland_data_control(true, false, false, false).unwrap());
         warnings.push(
             color_support_warning(
                 probes::RuntimeEvidence::Available(ColorLevel::Ansi256),
