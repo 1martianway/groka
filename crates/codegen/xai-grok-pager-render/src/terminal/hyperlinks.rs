@@ -186,6 +186,19 @@ pub fn hyperlink_capabilities(brand: TerminalName) -> HyperlinkCapabilities {
             native_link_hover: false,
             native_plain_url_open: false,
         },
+        // toowl parses OSC 8 natively but discards the `id=` params, so
+        // multi-line links are not stitched into one hover region. No OSC
+        // 22 cursor shaping, and no native hover styling for OSC 8 links
+        // (its own highlighting covers bare URLs it auto-detects, not
+        // app-emitted anchors), so the app keeps drawing its own.
+        TerminalName::Toowl => HyperlinkCapabilities {
+            osc8: Native,
+            id_param: false,
+            scheme_filter: SchemeFilter::Standard,
+            osc22_cursor: false,
+            native_link_hover: false,
+            native_plain_url_open: false,
+        },
         TerminalName::Otty | TerminalName::Unknown => HyperlinkCapabilities {
             osc8: Unknown,
             id_param: false,

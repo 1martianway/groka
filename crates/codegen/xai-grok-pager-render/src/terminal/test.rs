@@ -2020,3 +2020,47 @@ fn repaints_pane_out_of_band_per_arm() {
     };
     assert!(!plain.repaints_pane_out_of_band());
 }
+
+#[test]
+fn brand_toowl_from_term_program() {
+    // toowl sets TERM_PROGRAM=toowl on every child it spawns.
+    for value in ["toowl", "Toowl", "TOOWL"] {
+        let env = env_from(&[("TERM_PROGRAM", value)]);
+        assert_eq!(
+            detect_terminal_brand_from_env(&env),
+            TerminalName::Toowl,
+            "TERM_PROGRAM={value}"
+        );
+    }
+}
+
+/// The linchpin of toowl support: while the brand was unclassified,
+/// `kitty_skip_reason` returned `unknown_no_multiplexer`, so the pager
+/// never sent the `CSI ? u` probe — and toowl answers that probe. The
+/// warning was never about a missing protocol, only a missing entry here.
+#[test]
+fn toowl_is_classified_and_therefore_probes_kitty_keyboard() {
+    assert!(!TerminalName::Toowl.is_capability_unclassified());
+    let ctx = TerminalContext {
+        brand: TerminalName::Toowl,
+        env_brand: TerminalName::Toowl,
+        multiplexer: MultiplexerKind::Undetected,
+        ..Default::default()
+    };
+    assert_eq!(ctx.kitty_skip_reason(), None);
+    assert!(!ctx.shift_enter_unavailable());
+}
+
+#[test]
+fn toowl_applies_osc52_writes_to_the_system_clipboard() {
+    assert!(TerminalName::Toowl.supports_osc52_clipboard());
+}
+
+/// toowl parses OSC 8 but discards the `id=` params, so multi-line links
+/// must not be stitched into a single hover region.
+#[test]
+fn toowl_supports_osc8_but_not_the_id_parameter() {
+    let caps = hyperlink_capabilities(TerminalName::Toowl);
+    assert_eq!(caps.osc8, Osc8Support::Native);
+    assert!(!caps.id_param);
+}

@@ -272,6 +272,7 @@
             TerminalName::Terminator,
             TerminalName::WindowsTerminal,
             TerminalName::Otty,
+            TerminalName::Toowl,
             TerminalName::Unknown,
         ] {
             // Compiler-enforced exhaustiveness: if a new TerminalName
@@ -298,6 +299,7 @@
                 | TerminalName::Terminator
                 | TerminalName::WindowsTerminal
                 | TerminalName::Otty
+                | TerminalName::Toowl
                 | TerminalName::Unknown => false,
             };
             assert_eq!(

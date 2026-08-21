@@ -131,6 +131,11 @@ fn macos_capabilities(brand: TerminalName) -> KeyboardCapabilities {
         // Mouse reporting has known SGR bugs in Classic engine (IJPL-232482);
         // Reworked 2025 engine is better but indistinguishable via env vars.
         TerminalName::JetBrains => (Unknown, Unknown, Unknown),
+        // toowl encodes modified Enter through the Kitty protocol, so that
+        // one is positively known. Its Cmd+Bsp / Opt+Bsp AppKit fates have
+        // not been measured — classify those when there is evidence rather
+        // than guessing, as with the VTE arm above.
+        TerminalName::Toowl => (Unknown, Unknown, Native),
         TerminalName::WindowsTerminal | TerminalName::Otty | TerminalName::Unknown => {
             (Unknown, Unknown, Unknown)
         }

@@ -41,10 +41,13 @@ pub fn select_protocol(ctx: &TerminalContext) -> NotificationProtocol {
             NotificationProtocol::Osc9
         }
         TerminalName::Kitty => NotificationProtocol::Osc99,
+        // toowl implements OSC 777 and OSC 9; 777 is preferred because it
+        // carries a title field, so the notification is not body-only.
         TerminalName::Ghostty
         | TerminalName::Vte
         | TerminalName::Terminator
-        | TerminalName::Foot => NotificationProtocol::Osc777,
+        | TerminalName::Foot
+        | TerminalName::Toowl => NotificationProtocol::Osc777,
         TerminalName::GrokDesktop => NotificationProtocol::None,
         TerminalName::AppleTerminal
         | TerminalName::Alacritty
@@ -118,6 +121,24 @@ pub fn emit_notification(
             let _ = stderr.write_all(bytes);
             let _ = stderr.flush();
         });
+    }
+}
+
+#[cfg(test)]
+mod toowl_tests {
+    use super::*;
+    use crate::terminal::{TerminalContext, TerminalName};
+
+    /// toowl implements OSC 777 and OSC 9. 777 wins because it carries a
+    /// title, so the notification is not body-only — and because a
+    /// recognised brand means the pager stops falling back to the bell.
+    #[test]
+    fn toowl_uses_osc777_rather_than_the_bell() {
+        let ctx = TerminalContext {
+            brand: TerminalName::Toowl,
+            ..Default::default()
+        };
+        assert_eq!(select_protocol(&ctx), NotificationProtocol::Osc777);
     }
 }
 

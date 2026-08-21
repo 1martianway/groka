@@ -101,6 +101,7 @@ pub fn view(snapshot: DiagnosticSnapshot<'_>) -> DiagnosticReport {
     let mut warnings = startup_warnings(&snapshot);
     warnings.extend(super::diagnose_wayland_data_control_from_common(
         &snapshot.common,
+        snapshot.clipboard.route.osc52,
     ));
     warnings.extend(wezterm_warning);
     warnings.extend(super::color_support_warning(
