@@ -255,7 +255,10 @@ echo
 # Smoke-check custom fork surfaces still exist after the merge.
 MISSING=0
 for path in \
-  crates/codegen/xai-grok-shell/src/agent/effort_router.rs \
+  crates/codegen/xai-grok-shell/src/agent/effort_router \
+  crates/codegen/xai-grok-shell/src/agent/effort_router/classifier.rs \
+  crates/codegen/xai-grok-pager/src/views/credit_bar.rs \
+  crates/codegen/xai-grok-pager/src/slash/commands/usage.rs \
   scripts/install-groka.sh \
   FORK.md
 do
@@ -265,7 +268,7 @@ do
   fi
 done
 if [[ $MISSING -eq 0 ]]; then
-  ok "fork markers present (effort_router, install script, FORK.md)"
+  ok "fork markers present (effort_router, credit bar, /usage, install script, FORK.md)"
 fi
 
 if [[ "$PUSH" == 1 ]]; then

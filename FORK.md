@@ -78,6 +78,19 @@ or Settings → Usage limit bar.
 ./scripts/sync-upstream.sh --theirs     # prefer upstream on conflicts
 ```
 
+### One-shot update + build (Claude Code)
+
+```text
+/update-groka
+```
+
+Project skill at `.claude/skills/update-groka/SKILL.md`. Syncs upstream,
+resolves conflicts against the fork's file-ownership table (fork owns
+`effort_router/`, `credit_bar.rs`, `usage.rs`, `FORK.md`, `scripts/*`;
+upstream owns `SOURCE_REV`, `Cargo.lock`, `README.upstream.md`; shared files
+integrate both sides), then runs `install-groka.sh` and checks the version
+stamp. Resolves inline and reports; never pushes on its own.
+
 `SOURCE_REV` conflicts auto-take upstream. Real conflicts exit non-zero with
 paths and fix-up commands. Then:
 

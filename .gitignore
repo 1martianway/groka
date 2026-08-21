@@ -1,3 +1,6 @@
 /target
 **/*.rs.bk
 .DS_Store
+
+# Serena MCP project cache (tooling cruft, not fork state)
+.serena/
