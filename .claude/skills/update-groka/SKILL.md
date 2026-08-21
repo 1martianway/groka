@@ -108,7 +108,39 @@ The sync script prints its own marker check. If it warns about a missing file,
 check whether the file was *refactored* (renamed/split) rather than lost, and
 update the marker list in `scripts/sync-upstream.sh` to match reality.
 
-## Step 5 — Build and install
+## Step 5 — Test the fork's features (before building)
+
+```sh
+cargo test -p xai-grok-shell --lib effort_router
+```
+
+Run this **before** the release build, not after. It is a ~20s debug build of
+one crate against a ~8min release build of the workspace, and it fails on
+exactly the thing most likely to break after a sync: the fork's code calling an
+upstream API that changed shape. Catching that here saves the whole build.
+
+Expect all tests to pass (36 as of upstream 1.0.6). Pay attention to two in
+particular:
+
+- `old_toml_without_new_keys_still_deserializes` — the user's existing
+  `~/.grok/config.toml` still parses against upstream's new config types. If
+  this fails, the router silently reverts to defaults at runtime.
+- `precedence_pin_router_default_catalog_chain` — pin → router →
+  `default_reasoning_effort` → catalog high still holds.
+
+### If tests fail to compile
+
+Same diagnosis as a failed build: the fork calls an upstream API that moved.
+Find the commit (`git log -p upstream/main -- <path>`) and adapt the fork's
+call site. Do not revert the fork feature to make it compile — report the
+breakage if adapting is non-obvious.
+
+### If tests compile but fail
+
+Upstream changed *behavior* the fork depends on. This needs a human — report
+which tests failed and what they assert, and stop before building.
+
+## Step 6 — Build and install
 
 ```sh
 ./scripts/install-groka.sh
@@ -131,13 +163,13 @@ The script fails loudly if `groka --version` does not contain the current short
 
 ### If the build fails
 
-Compile errors after a sync are nearly always the fork's code calling an
-upstream API that changed signature. Read the actual error, find the upstream
-commit that moved the API (`git log -p upstream/main -- <path>`), and adapt the
-fork's call site. Do not revert the fork feature to make the build pass —
-report the breakage to the user if adapting is non-obvious.
+Step 5 should have caught API drift in `xai-grok-shell` already, so a failure
+here usually means a pager-side surface (`credit_bar.rs`, `usage.rs`, settings
+registry) that the router tests do not cover. Same fix: find the upstream
+commit that moved the API (`git log -p upstream/main -- <path>`) and adapt the
+fork's call site rather than reverting the fork feature.
 
-## Step 6 — Verify and report
+## Step 7 — Verify and report
 
 ```sh
 groka --version
@@ -146,11 +178,12 @@ git log --oneline -3
 
 Report to the user:
 - upstream commits merged (count + subjects)
+- test result from Step 5 (passed/total)
 - conflicts hit and how each was resolved
 - installed version string and that it matches HEAD
 - anything left dirty or unpushed
 
-## Step 7 — Push (ask first)
+## Step 8 — Push (ask first)
 
 The merge is **not** pushed automatically. Ask before running:
 
