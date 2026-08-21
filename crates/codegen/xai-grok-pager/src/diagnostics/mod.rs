@@ -2972,6 +2972,9 @@ mod tests {
         assert!(supports_focus_tracking(TerminalName::WarpTerminal));
         assert!(supports_focus_tracking(TerminalName::VsCode));
         assert!(supports_focus_tracking(TerminalName::GrokDesktop));
+        // toowl implements DEC mode ?1004 and emits \e[I / \e[O on the
+        // window focus transition.
+        assert!(supports_focus_tracking(TerminalName::Toowl));
         assert!(!supports_focus_tracking(TerminalName::AppleTerminal));
         assert!(!supports_focus_tracking(TerminalName::Unknown));
         assert!(!supports_focus_tracking(TerminalName::Otty));

@@ -343,6 +343,10 @@ impl ScrollConfig {
                 | TerminalName::Windsurf
                 | TerminalName::Zed => 1,
                 TerminalName::Kitty => 3,
+                // toowl forwards exactly one mouse report per wheel notch
+                // (it amplifies only its own scrollback, never the reports
+                // it sends the child), so one event per tick.
+                TerminalName::Toowl => 1,
                 TerminalName::GrokDesktop
                 | TerminalName::Vte
                 | TerminalName::Terminator

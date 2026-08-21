@@ -109,6 +109,13 @@ pub enum TerminalName {
     /// Otty (otty.sh). Wraps macOS IME commits in bracketed paste.
     #[strum(to_string = "Otty")]
     Otty,
+    /// Toowl (toowl.dev). GPU terminal; implements the Kitty keyboard
+    /// protocol (`DISAMBIGUATE_ESCAPE_CODES` + `REPORT_EVENT_TYPES`),
+    /// focus reporting (`?1004`), OSC 52 writes, OSC 8 hyperlinks and OSC
+    /// 777 notifications. Detected via `TERM_PROGRAM=toowl`, which it sets
+    /// on every child, and via its XTVERSION self-report over SSH.
+    #[strum(to_string = "Toowl")]
+    Toowl,
     /// Unknown terminal.
     #[default]
     Unknown,
@@ -160,6 +167,7 @@ impl TerminalName {
                 | Self::Cursor
                 | Self::Windsurf
                 | Self::Zed
+                | Self::Toowl
         )
     }
 
@@ -1034,6 +1042,7 @@ fn terminal_name_from_term_program(value: &str) -> Option<TerminalName> {
         "grokdesktop" => Some(TerminalName::GrokDesktop),
         "windowsterminal" => Some(TerminalName::WindowsTerminal),
         "otty" => Some(TerminalName::Otty),
+        "toowl" => Some(TerminalName::Toowl),
         _ => None,
     }
 }
