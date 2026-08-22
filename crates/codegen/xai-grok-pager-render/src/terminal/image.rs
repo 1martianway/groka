@@ -174,6 +174,7 @@ pub fn protocol_for_brand(brand: TerminalName, is_windows: bool) -> GraphicsProt
     }
     match brand {
         TerminalName::Kitty => GraphicsProtocol::Kitty,
+        TerminalName::Toowl => GraphicsProtocol::Kitty,
         TerminalName::Ghostty => GraphicsProtocol::Kitty,
         TerminalName::WezTerm => GraphicsProtocol::Kitty,
         TerminalName::WarpTerminal => GraphicsProtocol::Kitty,

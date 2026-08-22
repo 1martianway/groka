@@ -236,6 +236,7 @@ mod tests {
             TerminalName::Ghostty,
             TerminalName::Iterm2,
             TerminalName::Rio,
+            TerminalName::Toowl,
         ] {
             // Keeps this hardcoded copy of the allowlist from going vacuous.
             assert!(

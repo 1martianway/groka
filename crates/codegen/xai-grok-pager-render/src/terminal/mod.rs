@@ -749,6 +749,13 @@ pub fn detect_terminal_brand_from_env(env: &HashMap<String, String>) -> Terminal
         return name;
     }
 
+    // Toowl sets LC_TERMINAL=toowl so SSH (SendEnv/AcceptEnv LC_*) still
+    // names the brand after TERM_PROGRAM is stripped. Must beat the
+    // iTerm2 LC_TERMINAL check below.
+    if env_get(env, "LC_TERMINAL").is_some_and(|v| v.eq_ignore_ascii_case("toowl")) {
+        return TerminalName::Toowl;
+    }
+
     // JetBrains IDE terminal (JediTerm). All JetBrains IDEs (IntelliJ,
     // PhpStorm, WebStorm, etc.) set TERMINAL_EMULATOR=JetBrains-JediTerm.
     // Both the Classic and Reworked 2025 engine set the same value — there

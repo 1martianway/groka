@@ -102,7 +102,7 @@ pub(super) fn gate_allows_probe(ctx: &super::TerminalContext) -> bool {
     use super::TerminalName::*;
     matches!(
         ctx.brand,
-        Unknown | Kitty | WezTerm | Ghostty | Iterm2 | Rio
+        Unknown | Kitty | WezTerm | Ghostty | Iterm2 | Rio | Toowl
     ) && !ctx.multiplexer.intercepts_csi_queries()
 }
 
@@ -180,6 +180,7 @@ mod tests {
             TerminalName::Ghostty,
             TerminalName::Iterm2,
             TerminalName::Rio,
+            TerminalName::Toowl,
         ] {
             assert!(
                 gate_allows_probe(&ctx(brand, MultiplexerKind::Undetected)),

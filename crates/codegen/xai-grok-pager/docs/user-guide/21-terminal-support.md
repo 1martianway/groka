@@ -66,6 +66,7 @@ Grok detects these terminal emulators from environment variables:
 - **Grok Desktop**
 - **VTE**-based terminals such as GNOME Terminal, GNOME Console, and Tilix
 - **Windows Terminal**
+- **Toowl**
 
 Detection has these limitations:
 

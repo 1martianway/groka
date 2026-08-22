@@ -4,6 +4,7 @@ use super::*;
 fn protocol_matrix_matches_supported_terminals() {
     for (brand, expected) in [
         (TerminalName::Kitty, GraphicsProtocol::Kitty),
+        (TerminalName::Toowl, GraphicsProtocol::Kitty),
         (TerminalName::Ghostty, GraphicsProtocol::Kitty),
         (TerminalName::WezTerm, GraphicsProtocol::Kitty),
         (TerminalName::WarpTerminal, GraphicsProtocol::Kitty),

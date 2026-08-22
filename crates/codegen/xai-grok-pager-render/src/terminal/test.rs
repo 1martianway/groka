@@ -40,6 +40,14 @@ fn test_terminal_name_from_term_program() {
         terminal_name_from_term_program("Otty"),
         Some(TerminalName::Otty)
     );
+    assert_eq!(
+        terminal_name_from_term_program("toowl"),
+        Some(TerminalName::Toowl)
+    );
+    assert_eq!(
+        terminal_name_from_term_program("Toowl"),
+        Some(TerminalName::Toowl)
+    );
     assert_eq!(terminal_name_from_term_program("unknown-term"), None);
 }
 
@@ -1462,6 +1470,13 @@ fn kitty_allowed_known_good_terminal() {
         ..Default::default()
     };
     assert_eq!(ctx.kitty_skip_reason(), None);
+}
+
+#[test]
+fn brand_toowl_from_lc_terminal_survives_ssh() {
+    // TERM_PROGRAM is typically not forwarded over SSH; LC_* often is.
+    let env = env_from(&[("LC_TERMINAL", "toowl")]);
+    assert_eq!(detect_terminal_brand_from_env(&env), TerminalName::Toowl);
 }
 
 #[test]
