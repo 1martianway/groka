@@ -1,0 +1,80 @@
+name: CI
+
+# PR gate on the org Linux ARM64 burst pool. Same onboarding as magy/toowl:
+# call ci-infra pool.yml, then run on [self-hosted, Linux, ARM64, ci].
+# Fork PRs are skipped — groka is public and self-hosted runners must not
+# execute untrusted code.
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+  workflow_dispatch:
+
+concurrency:
+  group: groka-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pool:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: 1martianway/ci-infra/.github/workflows/pool.yml@v1
+    secrets:
+      CI_POOL_APP_PRIVATE_KEY: ${{ secrets.CI_POOL_APP_PRIVATE_KEY }}
+    permissions:
+      id-token: write
+      contents: read
+
+  test:
+    name: Test
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: pool
+    runs-on: [self-hosted, Linux, ARM64, ci]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Isolate cargo home & target dir
+        run: |
+          mkdir -p "$RUNNER_WORKSPACE/.cargo-groka"
+          echo "CARGO_HOME=$RUNNER_WORKSPACE/.cargo-groka" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$RUNNER_WORKSPACE/.target-groka-$GITHUB_JOB" >> "$GITHUB_ENV"
+          echo "$RUNNER_WORKSPACE/.cargo-groka/bin" >> "$GITHUB_PATH"
+          echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
+          echo "CARGO_PROFILE_TEST_DEBUG=0" >> "$GITHUB_ENV"
+
+      - name: Ensure rustup
+        run: |
+          export CARGO_HOME="${CARGO_HOME:-$RUNNER_WORKSPACE/.cargo-groka}"
+          export PATH="$CARGO_HOME/bin:$PATH"
+          mkdir -p "$CARGO_HOME"
+          if ! rustup --version >/dev/null 2>&1 || ! cargo --version >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.94.0 --profile default --no-modify-path
+          fi
+          rustup component add clippy rustfmt
+          rustup show
+          cargo --version
+
+      - name: Ensure dotslash (bundled protoc)
+        run: |
+          export PATH="${CARGO_HOME}/bin:$PATH"
+          if ! command -v dotslash >/dev/null 2>&1; then
+            cargo install dotslash --locked
+          fi
+          dotslash --version
+          ./bin/protoc --version
+
+      - name: Fork tests
+        run: |
+          export PATH="${CARGO_HOME}/bin:$PATH"
+          cargo test -p xai-grok-shell --lib effort_router
+
+      - name: Check pager (fork surfaces)
+        run: |
+          export PATH="${CARGO_HOME}/bin:$PATH"
+          cargo check -p xai-grok-pager --lib
