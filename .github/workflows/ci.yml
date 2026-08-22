@@ -1,10 +1,8 @@
 name: CI
 
-# PR gate on the org Linux ARM64 burst pool ([self-hosted, Linux, ARM64, ci]).
-# groka is public, so it cannot `uses:` ci-infra's private pool.yml (GitHub
-# treats that as "workflow was not found"). Do not launch or resize the
-# pool from here — magy/toowl already do. If no `ci` runner is online the
-# job queues until timeout.
+# Every groka CI run is Linux burst pool + the M1 (`toowl-mac-1`).
+# Labels: Linux uses `ci`; Darwin uses `macOS` only — never `ci`.
+# groka is public and cannot `uses:` ci-infra's private pool.yml.
 # Fork PRs are skipped: self-hosted runners must not execute untrusted code.
 
 on:
@@ -22,7 +20,7 @@ concurrency:
 
 jobs:
   test:
-    name: Test
+    name: Test (Linux)
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, ARM64, ci]
     timeout-minutes: 45
@@ -70,3 +68,53 @@ jobs:
         run: |
           export PATH="${CARGO_HOME}/bin:$PATH"
           cargo check -p xai-grok-pager --lib
+
+  darwin:
+    name: groka (darwin)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 90
+    env:
+      CARGO_HOME: ${{ github.workspace }}/../.cargo-groka
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../.target-groka-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Ensure rustup
+        run: |
+          mkdir -p "$CARGO_HOME"
+          export PATH="$CARGO_HOME/bin:$PATH"
+          if ! rustup --version >/dev/null 2>&1 || ! cargo --version >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.94.0 --profile default --no-modify-path
+          fi
+          rustup show
+          cargo --version
+
+      - name: Ensure dotslash (bundled protoc)
+        run: |
+          export PATH="$CARGO_HOME/bin:$PATH"
+          if ! command -v dotslash >/dev/null 2>&1; then
+            cargo install dotslash --locked
+          fi
+          ./bin/protoc --version
+
+      - name: Release build
+        run: |
+          export PATH="$CARGO_HOME/bin:$PATH"
+          cargo build -p xai-grok-pager-bin --release
+          BIN="${CARGO_TARGET_DIR}/release/xai-grok-pager"
+          test -x "$BIN"
+          mkdir -p dist
+          cp "$BIN" dist/groka
+          chmod +x dist/groka
+          ./dist/groka --version
+          git rev-parse --short HEAD
+
+      - name: Upload groka
+        uses: actions/upload-artifact@v4
+        with:
+          name: groka-aarch64-apple-darwin
+          path: dist/groka
+          if-no-files-found: error
+          retention-days: 14
