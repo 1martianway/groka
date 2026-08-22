@@ -1,9 +1,11 @@
 name: CI
 
-# PR gate on the org Linux ARM64 burst pool. Same onboarding as magy/toowl:
-# call ci-infra pool.yml, then run on [self-hosted, Linux, ARM64, ci].
-# Fork PRs are skipped — groka is public and self-hosted runners must not
-# execute untrusted code.
+# PR gate on the org Linux ARM64 burst pool ([self-hosted, Linux, ARM64, ci]).
+# groka is public, so it cannot `uses:` ci-infra's private pool.yml (GitHub
+# treats that as "workflow was not found"). Do not launch or resize the
+# pool from here — magy/toowl already do. If no `ci` runner is online the
+# job queues until timeout.
+# Fork PRs are skipped: self-hosted runners must not execute untrusted code.
 
 on:
   pull_request:
@@ -19,19 +21,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pool:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    uses: 1martianway/ci-infra/.github/workflows/pool.yml@v1
-    secrets:
-      CI_POOL_APP_PRIVATE_KEY: ${{ secrets.CI_POOL_APP_PRIVATE_KEY }}
-    permissions:
-      id-token: write
-      contents: read
-
   test:
     name: Test
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    needs: pool
     runs-on: [self-hosted, Linux, ARM64, ci]
     timeout-minutes: 45
 
